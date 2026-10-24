@@ -171,7 +171,7 @@ class World {
         return bases;
     }
 
-    update() {
+    update(now = Date.now()) {
         // 1. Group lights by the junction they face, and by the road they sit on
         const groups = new Map(); // junction point -> Map(road segment -> [lights])
         for (const m of this.markings) {
@@ -210,7 +210,7 @@ class World {
             const offset = groupIndex * 1700;
             groupIndex++;
 
-            const t = (Date.now() + offset) % cycle;
+            const t = (now + offset) % cycle;
             const activeRoad = Math.floor(t / slot);
             const timeInSlot = t % slot;
 

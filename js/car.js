@@ -16,13 +16,13 @@ class Car {
 
         this.useBrain = controlType === "AI";
         this.guided = guided;
-        this.guidance = [0, 0]; // [route bends left, route bends right]
+        this.guidance = [0, 0, 0]; // [route bends left, route bends right, signal ahead]
 
         if (controlType !== "DUMMY") {
             this.sensor = new Sensor(this);
-            // Guided cars get two extra inputs and a slightly bigger hidden layer
-            const inputCount = this.sensor.rayCount + (guided ? 2 : 0);
-            this.brain = new NeuralNetwork([inputCount, guided ? 8 : 6, 4]);
+            // Guided cars get three extra inputs and a slightly bigger hidden layer
+            const inputCount = this.sensor.rayCount + (guided ? 3 : 0);
+            this.brain = new NeuralNetwork([inputCount, guided ? 10 : 6, 4]);
         }
         this.controls = new Controls(controlType);
         this.polygon = this.#createPolygon();

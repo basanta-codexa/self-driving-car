@@ -56,16 +56,20 @@ const SETUP_KEY =
     [spawn.pos.x, spawn.pos.y, target ? target.center.x : 0, target ? target.center.y : 0]
         .map(Math.round)
         .join(",");
-const BRAIN_KEY = SETUP_KEY + ":brain2";
-const BEST_KEY = SETUP_KEY + ":best2";
+const BRAIN_KEY = SETUP_KEY + ":brain3";
+const BEST_KEY = SETUP_KEY + ":best5";
 
 // Training settings
 const N = 100;
 const MUTATION = 0.1;
-const STALL_FRAMES = 240;  // 4 seconds with no progress ends the generation
-const MAX_FRAMES = 3000;   // hard cap of about 50 seconds per generation
+const STALL_FRAMES = 900;  // 4 seconds with no progress ends the generation
+const MAX_FRAMES = 4500;   // hard cap of about 50 seconds per generation
 const LOOK_AHEAD = 100;    // how far ahead on the route the car "looks"
+const SIGNAL_RANGE = 120;  // how far ahead a car "feels" a signal
+const STOP_SPEED = 0.8;    // max speed allowed when crossing a stop line
 
+
+let violations = 0;
 let zoom = 1.5;
 let cars = [];
 let bestCar = null;
@@ -76,7 +80,76 @@ let frame = 0;
 let lastProgressFrame = 0;
 let topScore = -Infinity;
 
+
+// Every light and stop sign, with the direction cars approach it from
+const controls = buildControls();
+
+function buildControls() {
+    const list = [];
+    for (const m of world.markings) {
+        if (!(m instanceof Light) && !(m instanceof Stop)) continue;
+
+        const seg = getNearestSegment(m.center, graph.segments, world.roadWidth);
+        if (!seg) continue;
+
+        // The signal governs traffic heading toward the junction nearer to it
+        const junction =
+            distance(m.center, seg.p1) < distance(m.center, seg.p2) ? seg.p1 : seg.p2;
+        const dir = subtract(junction, m.center);
+        if (magnitude(dir) < 1) continue;
+
+        list.push({ marking: m, dir: normalize(dir) });
+    }
+    return list;
+}
+
 startGeneration();
+
+function checkSignals(car) {
+    const hx = -Math.sin(car.angle);
+    const hy = -Math.cos(car.angle);
+
+    let signal = 0;
+    let nearest = Infinity;
+
+    for (let i = 0; i < controls.length; i++) {
+        const c = controls[i];
+
+        // d: how far ahead the signal is along the road (negative = already passed)
+        const rel = subtract(c.marking.center, car);
+        const d = dot(rel, c.dir);
+        const lateral = Math.abs(dot(rel, perpendicular(c.dir)));
+
+        const prevD = car.prevD[i];
+        car.prevD[i] = d;
+
+        // Ignore signals on other roads, or for traffic heading the other way
+        if (lateral > world.roadWidth * 0.75) continue;
+        if (hx * c.dir.x + hy * c.dir.y < -0.3) continue;
+
+        const isLight = c.marking instanceof Light;
+        const state = c.marking.state;
+
+        // Rules: caught crossing the line
+        if (prevD !== undefined && prevD > 0 && d <= 0) {
+            if ((isLight && state === "red") || (!isLight && car.speed > STOP_SPEED)) {
+                car.damaged = true;
+                car.penalty = 200;
+                violations++;
+            }
+            
+        }
+
+        // Warning input: is something ahead that I should stop for?
+        const mustStop = !isLight || state === "red" || state === "yellow";
+        if (mustStop && d > 0 && d < SIGNAL_RANGE && d < nearest) {
+            nearest = d;
+            signal = 1 - d / SIGNAL_RANGE;
+        }
+    }
+    return signal;
+}
+
 animate();
 
 function spawnInfo() {
@@ -100,7 +173,7 @@ function spawnInfo() {
 
 // With a route, score is progress along it. Without one, plain distance driven.
 function scoreOf(car) {
-    return route ? car.progress : car.traveled;
+    return route ? car.progress - (car.penalty || 0) : car.traveled;
 }
 
 function getStartBrain() {
@@ -117,6 +190,7 @@ function startGeneration() {
         const car = new Car(spawn.pos.x, spawn.pos.y, 18, 32, "AI", 3, "blue", true);
         car.angle = spawn.angle;
         car.progress = 0;
+        car.prevD = [];
         cars.push(car);
     }
 
@@ -187,12 +261,12 @@ function guidanceFor(car) {
 
 function animate() {
     frame++;
-    world.update();
+    world.update(frame * (1000 / 60));
 
     let reachedTarget = false;
     for (const car of cars) {
         if (car.damaged) continue;
-        car.guidance = guidanceFor(car);
+        car.guidance = guidanceFor(car).concat(checkSignals(car));
         car.update(borders, []);
         if (route) {
             car.progress = route.progress(new Point(car.x, car.y));
@@ -229,6 +303,7 @@ function animate() {
             ? "Progress: " + Math.round(scoreOf(bestCar)) + " / " + Math.round(route.length) + "<br>"
             : "Distance: " + Math.round(scoreOf(bestCar)) + "<br>") +
         "Best ever: " + best + "<br>" +
+        "Signal violations: " + violations + "<br>" +
         (route ? "Reached target: " + reachedCount + " times" : "");
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
