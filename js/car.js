@@ -118,11 +118,12 @@ class Car {
 
         if (this.speed !== 0) {
             const flip = this.speed > 0 ? 1 : -1;
+            const steerRate = 0.03 * (Math.abs(this.speed) / this.maxSpeed);
             if (this.controls.left) {
-                this.angle += 0.03 * flip;
+                this.angle += steerRate * flip;
             }
             if (this.controls.right) {
-                this.angle -= 0.03 * flip;
+                this.angle -= steerRate * flip;
             }
         }
 
