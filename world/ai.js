@@ -56,8 +56,8 @@ const SETUP_KEY =
     [spawn.pos.x, spawn.pos.y, target ? target.center.x : 0, target ? target.center.y : 0]
         .map(Math.round)
         .join(",");
-const BRAIN_KEY = SETUP_KEY + ":brain3";
-const BEST_KEY = SETUP_KEY + ":best5";
+const BRAIN_KEY = SETUP_KEY + ":brain4";
+const BEST_KEY = SETUP_KEY + ":best6";
 
 // Training settings
 const N = 100;
@@ -291,8 +291,9 @@ function guidanceFor(car) {
     if (!route) return [0, 0];
 
     const look = route.pointAt(car.progress + LOOK_AHEAD);
-    const dx = look.x - car.x;
-    const dy = look.y - car.y;
+    const next = route.pointAt(car.progress + LOOK_AHEAD + 20);
+    const dx = next.x - look.x;
+    const dy = next.y - look.y;
 
     // The direction the car is facing
     const hx = -Math.sin(car.angle);
