@@ -18,8 +18,7 @@ const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 
-function parseArgs(argv) {
-    const args = {
+function parseArgs(argv) {    const args = {
         generations: 3,
         cars: 100,
         maxFrames: 4500,
@@ -30,6 +29,10 @@ function parseArgs(argv) {
         traceGen: 0,
         loadBrain: null,
         saveBrain: null,
+        seed: null,
+        score: "max",
+        guidance: "tangent",
+        verbose: false,
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -45,6 +48,10 @@ function parseArgs(argv) {
         else if (arg === "--trace-gen") args.traceGen = Number(next), i++;
         else if (arg === "--load-brain") args.loadBrain = next, i++;
         else if (arg === "--save-brain") args.saveBrain = next, i++;
+        else if (arg === "--seed") args.seed = Number(next), i++;
+        else if (arg === "--score") args.score = next, i++;
+        else if (arg === "--verbose") args.verbose = true;
+        else if (arg === "--guidance") args.guidance = next, i++;
         else {
             console.error(`Unknown argument: ${arg}`);
             process.exit(1);
@@ -54,7 +61,31 @@ function parseArgs(argv) {
     return args;
 }
 
+// Small deterministic PRNG so two runs with the same seed are comparable.
+function mulberry32(seed) {
+    return function random() {
+        seed |= 0;
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function mustReplace(source, pattern, replacement, label) {
+    const matched =
+        typeof pattern === "string" ? source.includes(pattern) : pattern.test(source);
+    if (!matched) {
+        throw new Error(`Harness override did not match: ${label}`);
+    }
+    return source.replace(pattern, replacement);
+}
+
 const args = parseArgs(process.argv);
+
+if (args.seed !== null) {
+    Math.random = mulberry32(args.seed);
+}
 
 const scripts = [
     "js/utils.js",
@@ -87,23 +118,59 @@ for (const file of scripts) {
 }
 
 // Harness-only overrides of the training constants.
-source = source.replace(
+source = mustReplace(
+    source,
     "const N = 100;",
-    `const N = ${args.cars};`
+    `const N = ${args.cars};`,
+    "cars"
 );
-source = source.replace(
+source = mustReplace(
+    source,
     "const MAX_FRAMES = 4500;",
-    `const MAX_FRAMES = ${args.maxFrames};`
+    `const MAX_FRAMES = ${args.maxFrames};`,
+    "maxFrames"
 );
-source = source.replace(
+source = mustReplace(
+    source,
     "const STALL_FRAMES = 900;",
-    `const STALL_FRAMES = ${args.stallFrames};`
+    `const STALL_FRAMES = ${args.stallFrames};`,
+    "stallFrames"
 );
 if (args.lookAhead !== null) {
-    source = source.replace(
+    source = mustReplace(
+        source,
         "const LOOK_AHEAD = 100;",
-        `const LOOK_AHEAD = ${args.lookAhead};`
+        `const LOOK_AHEAD = ${args.lookAhead};`,
+        "lookAhead"
     );
+}
+
+// A/B switch: score by furthest progress (app default) or final position
+// (the old behaviour). Used to compare fitness definitions honestly.
+if (args.score === "final") {
+    source = mustReplace(
+        source,
+        "return route ? (car.maxProgress || 0) - (car.penalty || 0) : car.traveled;",
+        "return route ? (car.progress || 0) - (car.penalty || 0) : car.traveled;",
+        "score"
+    );
+} else if (args.score !== "max") {
+    console.error(`Unknown --score value: ${args.score}`);
+    process.exit(1);
+}
+
+// A/B switch: guide by the route tangent ahead (app default) or by the
+// vector from the car to the look-ahead point (old behaviour).
+if (args.guidance === "point") {
+    source = mustReplace(
+        source,
+        /const next = route\.pointAt\(car\.progress \+ LOOK_AHEAD \+ 20\);\s*const dx = next\.x - look\.x;\s*const dy = next\.y - look\.y;/,
+        "const dx = look.x - car.x;\n    const dy = look.y - car.y;",
+        "guidance"
+    );
+} else if (args.guidance !== "tangent") {
+    console.error(`Unknown --guidance value: ${args.guidance}`);
+    process.exit(1);
 }
 
 // Skip all rendering; the simulation does not depend on it.
@@ -136,6 +203,7 @@ globalThis.__headless = {
             speed: bestCar.speed,
             angle: bestCar.angle,
             progress: bestCar.progress || 0,
+            maxProgress: bestCar.maxProgress || 0,
             offRoute: !!bestCar.offRoute,
             damaged: bestCar.damaged,
             guidance: (bestCar.guidance || []).slice(),
@@ -229,7 +297,10 @@ function run() {
     console.log(
         `headless training: cars=${args.cars} generations=${args.generations}` +
             ` maxFrames=${args.maxFrames} stall=${args.stallFrames}` +
-            (args.lookAhead !== null ? ` lookAhead=${args.lookAhead}` : "")
+            (args.lookAhead !== null ? ` lookAhead=${args.lookAhead}` : "") +
+            (args.seed !== null ? ` seed=${args.seed}` : "") +
+            ` score=${args.score}` +
+            ` guidance=${args.guidance}`
     );
 
     const startGeneration = headless.state().generation;
@@ -255,7 +326,7 @@ function run() {
                     `  g${before} f${String(headless.state().frame).padStart(4)} ` +
                         `pos=(${Math.round(car.x)},${Math.round(car.y)}) ` +
                         `v=${car.speed.toFixed(2)} ` +
-                        `p=${Math.round(car.progress)} ` +
+                        `p=${Math.round(car.progress)}/${Math.round(car.maxProgress)} ` +
                         `guide=[${car.guidance.map((g) => Number(g).toFixed(2)).join(",")}] ` +
                         `ctl=${Object.entries(car.controls)
                             .filter(([, on]) => on)
@@ -280,11 +351,18 @@ function run() {
                 x: end.position ? end.position.x : null,
                 y: end.position ? end.position.y : null,
                 speed: end.speed,
+                penalty: end.penalty,
+                liveProgress: end.liveProgress,
+                signalAhead: end.signalAhead,
+                nearestSignal: end.nearestSignal,
             });
         }
     }
 
     const routeLength = Math.round(headless.state().routeLength);
+    if (args.verbose) {
+        for (const row of rows) console.log(JSON.stringify(row));
+    }
     console.log(
         "\ngen  reason          alive   score  progress  best   pos            flags"
     );
