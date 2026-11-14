@@ -56,8 +56,8 @@ const SETUP_KEY =
     [spawn.pos.x, spawn.pos.y, target ? target.center.x : 0, target ? target.center.y : 0]
         .map(Math.round)
         .join(",");
-const BRAIN_KEY = SETUP_KEY + ":brain4";
-const BEST_KEY = SETUP_KEY + ":best6";
+const BRAIN_KEY = SETUP_KEY + ":brain5";
+const BEST_KEY = SETUP_KEY + ":best7";
 
 // Training settings
 const N = 100;
@@ -187,9 +187,10 @@ function spawnInfo() {
     };
 }
 
-// With a route, score is progress along it. Without one, plain distance driven.
+// With a route, score is how far along it the car ever got. Without one,
+// plain distance driven.
 function scoreOf(car) {
-    return route ? car.progress - (car.penalty || 0) : car.traveled;
+    return route ? (car.maxProgress || 0) - (car.penalty || 0) : car.traveled;
 }
 
 function getStartBrain() {
@@ -206,6 +207,7 @@ function startGeneration() {
         const car = new Car(spawn.pos.x, spawn.pos.y, 18, 32, "AI", 3, "blue", true);
         car.angle = spawn.angle;
         car.progress = 0;
+        car.maxProgress = 0;
         car.offRoute = false;
         car.prevD = [];
         cars.push(car);
@@ -255,7 +257,8 @@ function endGeneration(success, reason) {
         success,
         frame,
         score: Math.round(score),
-        progress: Math.round(furthest.progress || 0),
+        progress: Math.round(furthest.maxProgress || 0),
+        liveProgress: Math.round(furthest.progress || 0),
         position: { x: Math.round(furthest.x), y: Math.round(furthest.y) },
         damaged: furthest.damaged,
         offRoute: !!furthest.offRoute,
@@ -324,6 +327,7 @@ function animate() {
             if (car.offRoute) {
                 car.progress = 0;
             }
+            car.maxProgress = Math.max(car.maxProgress || 0, car.progress);
             if (distance(car, target.center) < world.roadWidth / 2) {
                 reachedTarget = true;
             }
@@ -376,7 +380,8 @@ function animate() {
     world.draw(ctx);
     if (route) route.draw(ctx);
     if (route) {
-        const look = route.pointAt(bestCar.progress + LOOK_AHEAD);
+        const shownProgress = bestCar.offRoute ? bestCar.maxProgress : bestCar.progress;
+        const look = route.pointAt((shownProgress || 0) + LOOK_AHEAD);
         look.draw(ctx, { color: "white", size: 22 });
         look.draw(ctx, { color: "#ff6b00", size: 14 });
     }
