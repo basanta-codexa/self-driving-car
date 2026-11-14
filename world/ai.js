@@ -79,6 +79,7 @@ let allowFallback = true;
 let frame = 0;
 let lastProgressFrame = 0;
 let topScore = -Infinity;
+let lastEndReason = "—";
 
 
 // Every light and stop sign, with the direction cars approach it from
@@ -150,6 +151,21 @@ function checkSignals(car) {
     return signal;
 }
 
+function nearestSignalInfo(car) {
+    let nearest = null;
+    for (const c of controls) {
+        const d = distance(c.marking.center, car);
+        if (!nearest || d < nearest.distance) {
+            nearest = {
+                type: c.marking instanceof Light ? "light" : "stop",
+                state: c.marking instanceof Light ? c.marking.state : "stop",
+                distance: Math.round(d),
+            };
+        }
+    }
+    return nearest;
+}
+
 animate();
 
 function spawnInfo() {
@@ -211,15 +227,45 @@ function startGeneration() {
     topScore = -Infinity;
 }
 
-function endGeneration(success) {
+function endGeneration(success, reason) {
     const furthest = cars.reduce((a, b) => (scoreOf(b) > scoreOf(a) ? b : a));
     const score = scoreOf(furthest);
     const stored = parseFloat(localStorage.getItem(BEST_KEY));
+    const saved = isNaN(stored) || score >= stored;
     // Only overwrite the saved brain if this generation matched or beat it
-    if (isNaN(stored) || score >= stored) {
+    if (saved) {
         localStorage.setItem(BRAIN_KEY, JSON.stringify(furthest.brain));
         localStorage.setItem(BEST_KEY, String(score));
     }
+
+    lastEndReason =
+        reason +
+        " @ " +
+        Math.round(score) +
+        (furthest.damaged ? " (crashed)" : " (alive)") +
+        " x=" +
+        Math.round(furthest.x) +
+        " y=" +
+        Math.round(furthest.y);
+
+    console.log("[generation end]", {
+        generation,
+        reason,
+        success,
+        frame,
+        score: Math.round(score),
+        progress: Math.round(furthest.progress || 0),
+        position: { x: Math.round(furthest.x), y: Math.round(furthest.y) },
+        damaged: furthest.damaged,
+        speed: Number(furthest.speed.toFixed(2)),
+        penalty: furthest.penalty || 0,
+        signalAhead: Number(((furthest.guidance && furthest.guidance[2]) || 0).toFixed(3)),
+        nearestSignal: nearestSignalInfo(furthest),
+        alive: cars.filter((c) => !c.damaged).length,
+        bestEver: Math.round(saved ? score : stored),
+        saved,
+    });
+
     if (success) reachedCount++;
     generation++;
     startGeneration();
@@ -290,7 +336,13 @@ function animate() {
 
     const stalled = frame - lastProgressFrame > STALL_FRAMES;
     if (reachedTarget || alive.length === 0 || stalled || frame > MAX_FRAMES) {
-        endGeneration(reachedTarget);
+        let reason = "unknown";
+        if (reachedTarget) reason = "reached-target";
+        else if (alive.length === 0) reason = "all-dead";
+        else if (frame > MAX_FRAMES) reason = "max-frames";
+        else if (stalled) reason = "stalled";
+
+        endGeneration(reachedTarget, reason);
         requestAnimationFrame(animate);
         return;
     }
@@ -304,7 +356,8 @@ function animate() {
             : "Distance: " + Math.round(scoreOf(bestCar)) + "<br>") +
         "Best ever: " + best + "<br>" +
         "Signal violations: " + violations + "<br>" +
-        (route ? "Reached target: " + reachedCount + " times" : "");
+        (route ? "Reached target: " + reachedCount + " times<br>" : "") +
+        "Last end: " + lastEndReason;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
