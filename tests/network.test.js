@@ -5,9 +5,6 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 test.before(() => {
-    const utilsSource = fs.readFileSync(path.join(__dirname, "..", "js", "utils.js"), "utf8");
-    vm.runInThisContext(utilsSource, { filename: "js/utils.js" });
-
     const source = fs.readFileSync(path.join(__dirname, "..", "js", "network.js"), "utf8");
     vm.runInThisContext(
         source + "\n;globalThis.NeuralNetwork = NeuralNetwork; globalThis.Level = Level;",
