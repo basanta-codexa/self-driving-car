@@ -206,6 +206,7 @@ function startGeneration() {
         const car = new Car(spawn.pos.x, spawn.pos.y, 18, 32, "AI", 3, "blue", true);
         car.angle = spawn.angle;
         car.progress = 0;
+        car.offRoute = false;
         car.prevD = [];
         cars.push(car);
     }
@@ -257,6 +258,7 @@ function endGeneration(success, reason) {
         progress: Math.round(furthest.progress || 0),
         position: { x: Math.round(furthest.x), y: Math.round(furthest.y) },
         damaged: furthest.damaged,
+        offRoute: !!furthest.offRoute,
         speed: Number(furthest.speed.toFixed(2)),
         penalty: furthest.penalty || 0,
         signalAhead: Number(((furthest.guidance && furthest.guidance[2]) || 0).toFixed(3)),
@@ -315,7 +317,12 @@ function animate() {
         car.guidance = guidanceFor(car).concat(checkSignals(car));
         car.update(borders, []);
         if (route) {
-            car.progress = route.progress(new Point(car.x, car.y));
+            const pos = new Point(car.x, car.y);
+            car.progress = route.progress(pos);
+            car.offRoute = route.distanceTo(pos) > world.roadWidth / 2;
+            if (car.offRoute) {
+                car.progress = 0;
+            }
             if (distance(car, target.center) < world.roadWidth / 2) {
                 reachedTarget = true;
             }

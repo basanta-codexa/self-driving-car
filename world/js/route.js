@@ -103,6 +103,15 @@ class Route {
         }
         return bestProgress;
     }
+
+    distanceTo(pos) {
+        let bestDist = Infinity;
+        for (const seg of this.segments) {
+            const d = seg.distanceToPoint(pos);
+            if (d < bestDist) bestDist = d;
+        }
+        return bestDist;
+    }
     // The point d pixels along the route (clamped to the start and the target)
     pointAt(d) {
         d = Math.max(0, Math.min(this.length, d));
