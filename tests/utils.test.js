@@ -37,3 +37,41 @@ test("getIntersection rejects a miss", () => {
 
     assert.equal(miss, null);
 });
+
+test("polysIntersect detects overlapping polygons", () => {
+    loadHelpers("../js/utils.js");
+
+    const squareA = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+    ];
+    const squareB = [
+        { x: 5, y: 5 },
+        { x: 15, y: 5 },
+        { x: 15, y: 15 },
+        { x: 5, y: 15 },
+    ];
+
+    assert.equal(polysIntersect(squareA, squareB), true);
+});
+
+test("polysIntersect rejects separated polygons", () => {
+    loadHelpers("../js/utils.js");
+
+    const squareA = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+    ];
+    const squareB = [
+        { x: 20, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 20, y: 10 },
+    ];
+
+    assert.equal(polysIntersect(squareA, squareB), false);
+});
