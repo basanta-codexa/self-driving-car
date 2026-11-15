@@ -34,6 +34,11 @@ They are separate pages but intentionally share a handful of JS globals/classes.
 
 ### `world/ai.html` + `world/ai.js`
 - Loads `world/saved-world.js`, builds world/graph/route, trains city cars, handles stop/signals/generation loop.
+- Fitness: furthest route progress, plus continuous credit for slowing at stop signs, minus signal penalties.
+- Steering: route-tangent guidance with a cross-track pull toward the centreline. Off-route progress is ignored.
+- Longitudinal rule layer: cars coast when a red/yellow light or an un-cleared stop sign is ahead. Stop signs clear once the car has actually stopped.
+- Only signals on the car's own approach count; perpendicular cross-road lights are ignored.
+- Headless equivalents live in `tools/train-headless.js` (one run) and `tools/eval-headless.js` (multi-seed).
 
 ## Shared state / data artifacts
 
@@ -59,6 +64,10 @@ These are checked in as data artifacts. The editor can regenerate/replace them.
 
 ## Current status
 
-- No automated tests/CI/lint/type tooling yet.
-- Docs (`README.md`) and license (`LICENSE`) are in place as the first polish steps.
-- Runtime behavior unchanged by documentation work in this phase.
+- Unit tests (`npm test`) cover geometry and the neural network.
+- Headless training/evaluation (`npm run train`, `npm run eval`) runs the real
+  city loop in Node, seeded and repeatable.
+- The city route is completed reliably in headless runs (100 cars): every
+  generation reaches the target with zero or near-zero signal violations.
+- Remaining friction: script-tag globals, duplicated utility surfaces, and
+  loose error handling for saved/exported data.

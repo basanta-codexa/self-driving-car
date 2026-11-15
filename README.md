@@ -11,7 +11,7 @@ There are four entry points (they share code, but run as separate pages):
 - **`index.html`** — straight-road training. Spawns `N` AI cars on a 3-lane road with dummy traffic, tracks the furthest car each frame, and restarts a generation when all cars are damaged, stalled, or past the finish line. Draws the active network on a side canvas.
 - **`world/index.html`** — world editor. Edit a road graph and place markings (stop, crossing, light, start, target). Saves/exports a world as JS data.
 - **`world/drive.html`** — manual driving in an exported world (`world/saved-world.js`). Spawns at the last `Start` marker if one exists, otherwise the middle of the first road segment.
-- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by route progress + guidance/signal inputs; otherwise it falls back to distance-based behavior. Includes basic stop-sign/light rule checks.
+- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs.
 
 ## How it works (quick)
 
@@ -35,6 +35,32 @@ Then visit:
 - `http://localhost:8000/world/ai.html`
 
 `drive.html` and `ai.html` expect `world/saved-world.js` to define `WORLD_DATA`.
+
+## Headless training
+
+The city training loop can run without a browser. The same scripts as
+`world/ai.html` are loaded into Node with a stubbed canvas, then the real
+`animate()` loop is driven frame by frame. This is how changes to the
+training logic are measured instead of eyeballed.
+
+```bash
+npm run train -- --generations 8 --cars 40 --seed 7
+npm run eval  -- --seeds 1-6 --generations 6 --cars 30
+```
+
+Useful flags for `npm run train`:
+
+- `--seed N` — deterministic run, comparable across code changes
+- `--cars N` — population size (default 100)
+- `--generations N` — how many generations to run
+- `--guidance center|tangent` — A/B the cross-track correction
+- `--stop-bonus N` — A/B the stop-credit weight
+- `--trace-every N --trace-gen N` — print the leader's position, speed,
+  guidance, brake state, nearest lights and controls every `N` frames
+- `--verbose` — dump the full generation-end record as JSON
+
+`npm run eval` runs independent seeds and reports mean/median progress,
+violations and target completions.
 
 ## Controls
 
@@ -68,10 +94,18 @@ Then visit:
 
 ## Current limitations
 
-- No automated tests, CI, or lint/type tooling yet.
 - Script-tag globals and some duplicated utilities make the structure fragile.
-- Training is a basic evolutionary loop (elitism + mutation), not tuned or benchmarked.
+- Training is a basic evolutionary loop (elitism + mutation). The headless
+  evaluator makes it measurable, but it is not tuned or benchmarked yet.
 - Minimal validation/error handling for saved/exported data.
 - `drive.html`/`ai.html` depend on the shape/contents of `saved-world.js`.
 
 This is an active work-in-progress being improved in small steps (docs, structure, tests, hardening) without breaking the demos.
+
+## Development
+
+```bash
+npm test        # geometry + network unit tests (node --test)
+npm run train   # headless city training
+npm run eval    # multi-seed evaluation
+```
