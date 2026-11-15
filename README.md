@@ -62,6 +62,22 @@ Useful flags for `npm run train`:
 `npm run eval` runs independent seeds and reports mean/median progress,
 violations and target completions.
 
+### What the numbers look like
+
+These are measured, not estimates. Route length is `3833`.
+
+| run | mean best progress | target completions | signal violations |
+|---|---:|---:|---:|
+| 100 cars, seed 7, 1 generation | 3892 | 1 / 1 | 0–2 |
+| 30 cars, seeds 1–6, 6 generations | 3516 | 13 / 36 | 0 |
+
+So at the app's default population the route is completed every generation.
+At 30 cars, roughly half the seeds finish within 6 generations; the rest stall
+around 2800–3000 where a car is waiting at a light or has not found the turn.
+The hall of fame changed these aggregates by less than seed noise (mean
+3486 → 3516, completions 14 → 13, violations 6 → 0). It is kept for its
+structure, not because it made training dramatically better.
+
 ## Controls
 
 **Straight-road demo (`index.html`)**
