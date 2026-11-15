@@ -31,7 +31,7 @@ function parseArgs(argv) {    const args = {
         saveBrain: null,
         seed: null,
         score: "max",
-        guidance: "tangent",
+        guidance: "center",
         verbose: false,
     };
 
@@ -159,16 +159,16 @@ if (args.score === "final") {
     process.exit(1);
 }
 
-// A/B switch: guide by the route tangent ahead (app default) or by the
-// vector from the car to the look-ahead point (old behaviour).
-if (args.guidance === "point") {
+// A/B switch: pull toward the route centreline (app default) or follow the
+// tangent alone, which is what let cars drift into the border.
+if (args.guidance === "tangent") {
     source = mustReplace(
         source,
-        /const next = route\.pointAt\(car\.progress \+ LOOK_AHEAD \+ 20\);\s*const dx = next\.x - look\.x;\s*const dy = next\.y - look\.y;/,
-        "const dx = look.x - car.x;\n    const dy = look.y - car.y;",
+        /    if \(car\.offRoute && lateral > 0\.001\) \{[\s\S]*?\n    \}/,
+        "    // cross-track correction disabled by the harness",
         "guidance"
     );
-} else if (args.guidance !== "tangent") {
+} else if (args.guidance !== "center") {
     console.error(`Unknown --guidance value: ${args.guidance}`);
     process.exit(1);
 }
@@ -197,9 +197,15 @@ globalThis.__headless = {
     },
     best() {
         if (!bestCar) return null;
+        let centre = null;
+        if (route) {
+            const p = route.pointAt(route.progress(bestCar));
+            centre = { x: p.x, y: p.y };
+        }
         return {
             x: bestCar.x,
             y: bestCar.y,
+            centre,
             speed: bestCar.speed,
             angle: bestCar.angle,
             progress: bestCar.progress || 0,
@@ -325,6 +331,7 @@ function run() {
                 console.log(
                     `  g${before} f${String(headless.state().frame).padStart(4)} ` +
                         `pos=(${Math.round(car.x)},${Math.round(car.y)}) ` +
+                        `off=${car.centre ? Math.round(car.x - car.centre.x) : "?"} ` +
                         `v=${car.speed.toFixed(2)} ` +
                         `p=${Math.round(car.progress)}/${Math.round(car.maxProgress)} ` +
                         `guide=[${car.guidance.map((g) => Number(g).toFixed(2)).join(",")}] ` +

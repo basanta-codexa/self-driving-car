@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test": "node --test",
-    "train": "node tools/train-headless.js"
+    "train": "node tools/train-headless.js",
+    "eval": "node tools/eval-headless.js"
   }
 }
