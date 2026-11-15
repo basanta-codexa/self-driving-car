@@ -45,10 +45,35 @@ class Car {
             const outputs = NeuralNetwork.feedForward(inputs, this.brain);
 
             if (this.useBrain) {
-                this.controls.forward = outputs[0];
-                this.controls.left = outputs[1];
-                this.controls.right = outputs[2];
-                this.controls.reverse = outputs[3];
+                let forward = outputs[0];
+                let left = outputs[1];
+                let right = outputs[2];
+                let reverse = outputs[3];
+
+                if (this.guided) {
+                    // The network can switch both directions on at once, which
+                    // cancels any movement. Resolve the contradiction instead
+                    // of leaving the car frozen.
+                    if (forward && reverse) {
+                        reverse = 0;
+                    }
+                    if (left && right) {
+                        const hint = (this.guidance[1] || 0) - (this.guidance[0] || 0);
+                        if (hint > 0) {
+                            left = 0;
+                        } else if (hint < 0) {
+                            right = 0;
+                        } else {
+                            left = 0;
+                            right = 0;
+                        }
+                    }
+                }
+
+                this.controls.forward = forward;
+                this.controls.left = left;
+                this.controls.right = right;
+                this.controls.reverse = reverse;
             }
         }
     }

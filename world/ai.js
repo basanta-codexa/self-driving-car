@@ -121,32 +121,52 @@ function checkSignals(car) {
         const d = dot(rel, c.dir);
         const lateral = Math.abs(dot(rel, perpendicular(c.dir)));
 
-        const prevD = car.prevD[i];
-        car.prevD[i] = d;
-
-        // Ignore signals on other roads, or for traffic heading the other way
+        // Ignore signals on other roads, or for traffic heading the other way.
+        // Keep prevD untouched here, otherwise a stale value can look like a
+        // crossing the next time this control comes back into range.
         if (lateral > world.roadWidth * 0.75) continue;
         if (hx * c.dir.x + hy * c.dir.y < -0.3) continue;
 
+        const prevD = car.prevD[i];
         const isLight = c.marking instanceof Light;
         const state = c.marking.state;
 
-        // Rules: caught crossing the line
+        // The stop line was crossed this frame
         if (prevD !== undefined && prevD > 0 && d <= 0) {
-            if ((isLight && state === "red") || (!isLight && car.speed > STOP_SPEED)) {
+            if (isLight && state === "red") {
+                car.damaged = true;
+                car.penalty = 200;
+                violations++;
+            } else if (!isLight && !car.stopped[i]) {
+                // Ran the stop sign without ever slowing down
                 car.damaged = true;
                 car.penalty = 200;
                 violations++;
             }
-            
+            car.stopped[i] = false;
         }
 
-        // Warning input: is something ahead that I should stop for?
-        const mustStop = !isLight || state === "red" || state === "yellow";
-        if (mustStop && d > 0 && d < SIGNAL_RANGE && d < nearest) {
-            nearest = d;
-            signal = 1 - d / SIGNAL_RANGE;
+        if (!isLight) {
+            // A stop sign only holds the car until it has actually stopped.
+            // Once it has come to rest, clear the signal and let it go.
+            if (d > 0 && d < SIGNAL_RANGE) {
+                if (Math.abs(car.speed) <= STOP_SPEED) {
+                    car.stopped[i] = true;
+                }
+                if (!car.stopped[i] && d < nearest) {
+                    nearest = d;
+                    signal = 1 - d / SIGNAL_RANGE;
+                }
+            }
+        } else {
+            const mustStop = state === "red" || state === "yellow";
+            if (mustStop && d > 0 && d < SIGNAL_RANGE && d < nearest) {
+                nearest = d;
+                signal = 1 - d / SIGNAL_RANGE;
+            }
         }
+
+        car.prevD[i] = d;
     }
     return signal;
 }
@@ -210,6 +230,7 @@ function startGeneration() {
         car.maxProgress = 0;
         car.offRoute = false;
         car.prevD = [];
+        car.stopped = [];
         cars.push(car);
     }
 
@@ -293,17 +314,45 @@ function discardBrain() {
 function guidanceFor(car) {
     if (!route) return [0, 0];
 
-    const look = route.pointAt(car.progress + LOOK_AHEAD);
-    const next = route.pointAt(car.progress + LOOK_AHEAD + 20);
-    const dx = next.x - look.x;
-    const dy = next.y - look.y;
+    // Use the true nearest point on the route, even for off-route cars.
+    // car.progress is zeroed for scoring, so it must not drive guidance.
+    const p = route.progress(car);
+    const look = route.pointAt(p + LOOK_AHEAD);
+    const next = route.pointAt(p + LOOK_AHEAD + 20);
+
+    // Direction of travel along the route ahead, as a unit vector.
+    let dx = next.x - look.x;
+    let dy = next.y - look.y;
+    const tangentLength = Math.hypot(dx, dy);
+    if (tangentLength > 0.001) {
+        dx /= tangentLength;
+        dy /= tangentLength;
+    }
+
+    // How far the car sits from the centreline, and which way is back.
+    const centre = route.pointAt(p);
+    const ex = centre.x - car.x;
+    const ey = centre.y - car.y;
+    const lateral = Math.hypot(ex, ey);
+
+    if (car.offRoute && lateral > 0.001) {
+        // Get back on the road before trying to follow it.
+        dx = ex / lateral;
+        dy = ey / lateral;
+    } else if (lateral > 1) {
+        // Blend back toward the centreline. The pull grows with the error
+        // and never exceeds the tangent, so corners still dominate.
+        const gain = Math.min(1, lateral / (world.roadWidth / 2));
+        dx += (ex / lateral) * gain;
+        dy += (ey / lateral) * gain;
+    }
 
     // The direction the car is facing
     const hx = -Math.sin(car.angle);
     const hy = -Math.cos(car.angle);
 
-    // Signed angle from facing direction to the look-ahead point
-    // (positive = the point is to the right, negative = to the left)
+    // Signed angle from facing direction to the desired direction
+    // (positive = turn right, negative = turn left)
     const rel = Math.atan2(hx * dy - hy * dx, hx * dx + hy * dy);
 
     // Turn it into 0..1, reaching 1 at a 90 degree bend
