@@ -109,6 +109,7 @@ const scripts = [
     "js/network.js",
     "js/car.js",
     "world/saved-world.js",
+    "world/js/selection.js",
     "world/ai.js",
 ];
 
@@ -381,6 +382,8 @@ function run() {
                 nearestSignal: end.nearestSignal,
                 stopped: end.stopped,
                 stopCredit: end.stopCredit,
+                finishers: end.finishers,
+                selected: end.selected,
             });
         }
     }
@@ -407,6 +410,7 @@ function run() {
                 String(row.bestEver).padStart(6),
                 `${fmt(row.x)} , ${fmt(row.y)}`.padEnd(15),
                 `stopped=${row.stopped || 0}`,
+                `fin=${row.finishers || 0}`,
                 flags,
             ].join("  ")
         );

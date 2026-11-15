@@ -58,6 +58,9 @@ const SETUP_KEY =
         .join(",");
 const BRAIN_KEY = SETUP_KEY + ":brain6";
 const BEST_KEY = SETUP_KEY + ":best8";
+// "1" when the stored brain is known to have completed the route. Used so a
+// high-scoring non-finisher can never replace a brain that actually arrived.
+const FINISHED_KEY = SETUP_KEY + ":finished1";
 
 // Training settings
 const N = 100;
@@ -246,6 +249,7 @@ function startGeneration() {
         car.progress = 0;
         car.maxProgress = 0;
         car.offRoute = false;
+        car.reachedTarget = false;
         car.prevD = [];
         car.stopped = [];
         cars.push(car);
@@ -269,14 +273,23 @@ function startGeneration() {
 }
 
 function endGeneration(success, reason) {
-    const furthest = cars.reduce((a, b) => (scoreOf(b) > scoreOf(a) ? b : a));
+    // When the route was completed, the brain worth keeping is the one that
+    // actually arrived. Stop-credit can let a non-finisher outscore it.
+    const { leader: furthest, finishers, arrived } = pickGenerationLeader(
+        cars,
+        success,
+        scoreOf
+    );
     const score = scoreOf(furthest);
     const stored = parseFloat(localStorage.getItem(BEST_KEY));
-    const saved = isNaN(stored) || score >= stored;
-    // Only overwrite the saved brain if this generation matched or beat it
+    const wasFinished = localStorage.getItem(FINISHED_KEY) === "1";
+    // Save on a new high score, or whenever this run finished and the stored
+    // brain never did. A finisher must not be blocked by leftover stop-credit.
+    const saved = isNaN(stored) || score >= stored || (arrived && !wasFinished);
     if (saved) {
         localStorage.setItem(BRAIN_KEY, JSON.stringify(furthest.brain));
         localStorage.setItem(BEST_KEY, String(score));
+        localStorage.setItem(FINISHED_KEY, arrived ? "1" : "0");
     }
 
     lastEndReason =
@@ -307,6 +320,8 @@ function endGeneration(success, reason) {
         nearestSignal: nearestSignalInfo(furthest),
         alive: cars.filter((c) => !c.damaged).length,
         stopped: cars.filter((c) => c.everStopped).length,
+        finishers: finishers,
+        selected: arrived ? "finisher" : "best",
         bestEver: Math.round(saved ? score : stored),
         saved,
     });
@@ -317,13 +332,19 @@ function endGeneration(success, reason) {
 }
 
 function saveBrain() {
-    localStorage.setItem(BRAIN_KEY, JSON.stringify(bestCar.brain));
-    localStorage.setItem(BEST_KEY, String(scoreOf(bestCar)));
+    // Prefer a car that actually finished, even if a non-finisher has more
+    // stop-credit, so the saved brain is the one that completes the route.
+    const { leader, arrived } = pickGenerationLeader(cars, true, scoreOf);
+    const chosen = leader || bestCar;
+    localStorage.setItem(BRAIN_KEY, JSON.stringify(chosen.brain));
+    localStorage.setItem(BEST_KEY, String(scoreOf(chosen)));
+    localStorage.setItem(FINISHED_KEY, arrived ? "1" : "0");
 }
 
 function discardBrain() {
     localStorage.removeItem(BRAIN_KEY);
     localStorage.removeItem(BEST_KEY);
+    localStorage.removeItem(FINISHED_KEY);
     allowFallback = false;
     generation = 1;
     reachedCount = 0;
@@ -398,6 +419,7 @@ function animate() {
             }
             car.maxProgress = Math.max(car.maxProgress || 0, car.progress);
             if (distance(car, target.center) < world.roadWidth / 2) {
+                car.reachedTarget = true;
                 reachedTarget = true;
             }
         }
