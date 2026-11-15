@@ -117,6 +117,13 @@ class Car {
     }
 
     #move() {
+        // Traffic-rule layer: when a signal says stop, coast regardless of
+        // what the learned controller wants. Steering stays learned.
+        if (this.brake) {
+            this.controls.forward = false;
+            this.controls.reverse = false;
+        }
+
         if (this.controls.forward) {
             this.speed += this.acceleration;
         }

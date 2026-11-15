@@ -56,8 +56,8 @@ const SETUP_KEY =
     [spawn.pos.x, spawn.pos.y, target ? target.center.x : 0, target ? target.center.y : 0]
         .map(Math.round)
         .join(",");
-const BRAIN_KEY = SETUP_KEY + ":brain5";
-const BEST_KEY = SETUP_KEY + ":best7";
+const BRAIN_KEY = SETUP_KEY + ":brain6";
+const BEST_KEY = SETUP_KEY + ":best8";
 
 // Training settings
 const N = 100;
@@ -67,6 +67,7 @@ const MAX_FRAMES = 4500;   // hard cap of about 50 seconds per generation
 const LOOK_AHEAD = 100;    // how far ahead on the route the car "looks"
 const SIGNAL_RANGE = 120;  // how far ahead a car "feels" a signal
 const STOP_SPEED = 0.8;    // max speed allowed when crossing a stop line
+const STOP_BONUS = 150;    // maximum reward for slowing to a stop
 
 
 let violations = 0;
@@ -122,10 +123,10 @@ function checkSignals(car) {
         const lateral = Math.abs(dot(rel, perpendicular(c.dir)));
 
         // Ignore signals on other roads, or for traffic heading the other way.
-        // Keep prevD untouched here, otherwise a stale value can look like a
-        // crossing the next time this control comes back into range.
-        if (lateral > world.roadWidth * 0.75) continue;
-        if (hx * c.dir.x + hy * c.dir.y < -0.3) continue;
+        // A crossing road's light is perpendicular to this car, so a weak
+        // heading test lets it block traffic that has a green light.
+        if (lateral > world.roadWidth * 0.6) continue;
+        if (hx * c.dir.x + hy * c.dir.y < 0.3) continue;
 
         const prevD = car.prevD[i];
         const isLight = c.marking instanceof Light;
@@ -150,8 +151,21 @@ function checkSignals(car) {
             // A stop sign only holds the car until it has actually stopped.
             // Once it has come to rest, clear the signal and let it go.
             if (d > 0 && d < SIGNAL_RANGE) {
+                // Reward slowing down continuously, not just a full stop.
+                // A binary "did you stop" bonus is a cliff the population
+                // cannot climb; partial credit gives evolution a gradient.
+                const slowdown = Math.max(
+                    0,
+                    1 - Math.abs(car.speed) / car.maxSpeed
+                );
+                car.stopCredit = Math.max(
+                    car.stopCredit || 0,
+                    slowdown * STOP_BONUS
+                );
+
                 if (Math.abs(car.speed) <= STOP_SPEED) {
                     car.stopped[i] = true;
+                    car.everStopped = true;
                 }
                 if (!car.stopped[i] && d < nearest) {
                     nearest = d;
@@ -207,10 +221,13 @@ function spawnInfo() {
     };
 }
 
-// With a route, score is how far along it the car ever got. Without one,
-// plain distance driven.
+// With a route, score is how far along it the car ever got, plus credit for
+// stopping at stop signs, minus signal penalties. Without a route, plain
+// distance driven.
 function scoreOf(car) {
-    return route ? (car.maxProgress || 0) - (car.penalty || 0) : car.traveled;
+    return route
+        ? (car.maxProgress || 0) + (car.stopCredit || 0) - (car.penalty || 0)
+        : car.traveled;
 }
 
 function getStartBrain() {
@@ -265,7 +282,7 @@ function endGeneration(success, reason) {
     lastEndReason =
         reason +
         " @ " +
-        Math.round(score) +
+        Math.round(furthest.maxProgress || 0) +
         (furthest.damaged ? " (crashed)" : " (alive)") +
         " x=" +
         Math.round(furthest.x) +
@@ -285,9 +302,11 @@ function endGeneration(success, reason) {
         offRoute: !!furthest.offRoute,
         speed: Number(furthest.speed.toFixed(2)),
         penalty: furthest.penalty || 0,
+        stopCredit: Number((furthest.stopCredit || 0).toFixed(0)),
         signalAhead: Number(((furthest.guidance && furthest.guidance[2]) || 0).toFixed(3)),
         nearestSignal: nearestSignalInfo(furthest),
         alive: cars.filter((c) => !c.damaged).length,
+        stopped: cars.filter((c) => c.everStopped).length,
         bestEver: Math.round(saved ? score : stored),
         saved,
     });
@@ -368,6 +387,7 @@ function animate() {
     for (const car of cars) {
         if (car.damaged) continue;
         car.guidance = guidanceFor(car).concat(checkSignals(car));
+        car.brake = car.guidance[2] > 0.05;
         car.update(borders, []);
         if (route) {
             const pos = new Point(car.x, car.y);
@@ -388,10 +408,15 @@ function animate() {
     bestCar = pool.reduce((a, b) => (scoreOf(b) > scoreOf(a) ? b : a));
 
     // Progress is measured over the whole generation, so a leader crashing
-    // doesn't look like a stall
+    // doesn't look like a stall. Waiting at a red light is not a stall either.
     const top = Math.max(...cars.map(scoreOf));
-    if (top > topScore + 1) {
-        topScore = top;
+    const waitingAtSignal =
+        bestCar &&
+        bestCar.guidance &&
+        bestCar.guidance[2] > 0.05 &&
+        Math.abs(bestCar.speed) < 0.5;
+    if (top > topScore + 1 || waitingAtSignal) {
+        topScore = Math.max(topScore, top);
         lastProgressFrame = frame;
     }
 
@@ -413,9 +438,9 @@ function animate() {
         "Generation: " + generation + "<br>" +
         "Alive: " + alive.length + " / " + N + "<br>" +
         (route
-            ? "Progress: " + Math.round(scoreOf(bestCar)) + " / " + Math.round(route.length) + "<br>"
+            ? "Progress: " + Math.round(bestCar.maxProgress || 0) + " / " + Math.round(route.length) + "<br>"
             : "Distance: " + Math.round(scoreOf(bestCar)) + "<br>") +
-        "Best ever: " + best + "<br>" +
+        "Best score: " + best + "<br>" +
         "Signal violations: " + violations + "<br>" +
         (route ? "Reached target: " + reachedCount + " times<br>" : "") +
         "Last end: " + lastEndReason;
