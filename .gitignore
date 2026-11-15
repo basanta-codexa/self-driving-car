@@ -1,5 +1,5 @@
 node_modules/
-tools/.brain-*.json
+tools/.brain*.json
 Screen Recording*.mp4
 *.mp4
 *.webm

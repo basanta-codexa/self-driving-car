@@ -30,8 +30,8 @@ function parseArgs(argv) {    const args = {
         loadBrain: null,
         saveBrain: null,
         seed: null,
-        score: "max",
         guidance: "center",
+        stopBonus: null,
         verbose: false,
     };
 
@@ -49,7 +49,7 @@ function parseArgs(argv) {    const args = {
         else if (arg === "--load-brain") args.loadBrain = next, i++;
         else if (arg === "--save-brain") args.saveBrain = next, i++;
         else if (arg === "--seed") args.seed = Number(next), i++;
-        else if (arg === "--score") args.score = next, i++;
+        else if (arg === "--stop-bonus") args.stopBonus = Number(next), i++;
         else if (arg === "--verbose") args.verbose = true;
         else if (arg === "--guidance") args.guidance = next, i++;
         else {
@@ -145,18 +145,14 @@ if (args.lookAhead !== null) {
     );
 }
 
-// A/B switch: score by furthest progress (app default) or final position
-// (the old behaviour). Used to compare fitness definitions honestly.
-if (args.score === "final") {
+// A/B switch: reward for stopping at a stop sign (0 disables it).
+if (args.stopBonus !== null) {
     source = mustReplace(
         source,
-        "return route ? (car.maxProgress || 0) - (car.penalty || 0) : car.traveled;",
-        "return route ? (car.progress || 0) - (car.penalty || 0) : car.traveled;",
-        "score"
+        "const STOP_BONUS = 150;",
+        `const STOP_BONUS = ${args.stopBonus};`,
+        "stopBonus"
     );
-} else if (args.score !== "max") {
-    console.error(`Unknown --score value: ${args.score}`);
-    process.exit(1);
 }
 
 // A/B switch: pull toward the route centreline (app default) or follow the
@@ -190,6 +186,9 @@ globalThis.__headless = {
             routeLength: route ? route.length : 0,
             alive: cars.filter((c) => !c.damaged).length,
             bestEver: parseFloat(localStorage.getItem(BEST_KEY)) || 0,
+            lights: world.markings
+                .filter((m) => m instanceof Light)
+                .map((m) => m.state),
         };
     },
     step() {
@@ -212,6 +211,21 @@ globalThis.__headless = {
             maxProgress: bestCar.maxProgress || 0,
             offRoute: !!bestCar.offRoute,
             damaged: bestCar.damaged,
+            brake: !!bestCar.brake,
+            signalsNear: controls
+                .map((c, i) => {
+                    const rel = subtract(c.marking.center, bestCar);
+                    const d = dot(rel, c.dir);
+                    const lateral = Math.abs(dot(rel, perpendicular(c.dir)));
+                    return {
+                        i,
+                        type: c.marking instanceof Light ? "light" : "stop",
+                        state: c.marking.state,
+                        d: Math.round(d),
+                        lateral: Math.round(lateral),
+                    };
+                })
+                .filter((s) => s.d > -20 && s.d < 130 && s.lateral < 83),
             guidance: (bestCar.guidance || []).slice(),
             controls: {
                 forward: !!bestCar.controls.forward,
@@ -305,7 +319,7 @@ function run() {
             ` maxFrames=${args.maxFrames} stall=${args.stallFrames}` +
             (args.lookAhead !== null ? ` lookAhead=${args.lookAhead}` : "") +
             (args.seed !== null ? ` seed=${args.seed}` : "") +
-            ` score=${args.score}` +
+            (args.stopBonus !== null ? ` stopBonus=${args.stopBonus}` : "") +
             ` guidance=${args.guidance}`
     );
 
@@ -335,6 +349,9 @@ function run() {
                         `v=${car.speed.toFixed(2)} ` +
                         `p=${Math.round(car.progress)}/${Math.round(car.maxProgress)} ` +
                         `guide=[${car.guidance.map((g) => Number(g).toFixed(2)).join(",")}] ` +
+                        `brake=${car.brake ? "Y" : "n"} ` +
+                        `lights=[${headless.state().lights.join(",")}] ` +
+                        `near=${JSON.stringify(car.signalsNear)} ` +
                         `ctl=${Object.entries(car.controls)
                             .filter(([, on]) => on)
                             .map(([name]) => name)
@@ -362,6 +379,8 @@ function run() {
                 liveProgress: end.liveProgress,
                 signalAhead: end.signalAhead,
                 nearestSignal: end.nearestSignal,
+                stopped: end.stopped,
+                stopCredit: end.stopCredit,
             });
         }
     }
@@ -387,6 +406,7 @@ function run() {
                 `${String(row.progress).padStart(4)}/${routeLength}`,
                 String(row.bestEver).padStart(6),
                 `${fmt(row.x)} , ${fmt(row.y)}`.padEnd(15),
+                `stopped=${row.stopped || 0}`,
                 flags,
             ].join("  ")
         );
