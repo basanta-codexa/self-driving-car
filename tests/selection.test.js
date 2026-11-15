@@ -10,7 +10,9 @@ test.before(() => {
         "utf8"
     );
     vm.runInThisContext(
-        source + "\n;globalThis.pickGenerationLeader = pickGenerationLeader;",
+        source +
+            "\n;globalThis.pickGenerationLeader = pickGenerationLeader;" +
+            "globalThis.mergeElites = mergeElites;",
         { filename: "world/js/selection.js" }
     );
 });
@@ -73,4 +75,60 @@ test("an empty population returns no leader", () => {
     assert.equal(picked.leader, null);
     assert.equal(picked.finishers, 0);
     assert.equal(picked.arrived, false);
+});
+
+const elite = (name, score, finished, generation) => ({
+    name,
+    brain: { id: name },
+    score,
+    finished,
+    generation,
+});
+
+test("elites are ordered by finishing, then score", () => {
+    const elites = mergeElites(
+        [elite("old", 500, false, 1)],
+        elite("finisher", 100, true, 2),
+        5
+    );
+
+    assert.deepEqual(
+        elites.map((e) => e.name),
+        ["finisher", "old"]
+    );
+});
+
+test("the hall of fame keeps only the best entries", () => {
+    const stored = [elite("a", 10, false, 1), elite("b", 20, false, 2)];
+    const elites = mergeElites(stored, elite("c", 30, false, 3), 2);
+
+    assert.deepEqual(
+        elites.map((e) => e.name),
+        ["c", "b"]
+    );
+});
+
+test("a tied newer elite replaces the older one on a plateau", () => {
+    const stored = [elite("old", 100, false, 1)];
+    const elites = mergeElites(stored, elite("new", 100, false, 2), 1);
+
+    assert.equal(elites[0].name, "new");
+});
+
+test("the candidate is kept while the hall has room", () => {
+    const elites = mergeElites([], elite("first", 5, false, 1), 5);
+
+    assert.equal(elites.length, 1);
+    assert.equal(elites[0].name, "first");
+});
+
+test("an identical brain is refreshed instead of duplicated", () => {
+    const stored = [elite("same", 100, false, 1)];
+    const candidate = elite("same", 120, true, 2);
+    const elites = mergeElites(stored, candidate, 5);
+
+    assert.equal(elites.length, 1);
+    assert.equal(elites[0].score, 120);
+    assert.equal(elites[0].finished, true);
+    assert.equal(elites[0].generation, 2);
 });

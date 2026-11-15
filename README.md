@@ -81,9 +81,14 @@ violations and target completions.
 - Mouse wheel — zoom
 
 **City AI (`world/ai.html`)**
-- `Save best` — persist best brain/score for the current start/target setup
-- `Discard` — clear saved brain/score for that setup and restart
+- `Save best` — persist the best brain/score for the current start/target setup
+- `Discard` — clear saved brains/scores for that setup and restart
 - Mouse wheel — zoom
+
+Training keeps a hall of fame (5 brains per start/target setup). The best cars
+are re-run unchanged each generation, and the rest of the population is mutated
+copies of a random elite. Finishers beat non-finishers when ranking, so a car
+that completed the route is never displaced by one that merely scored well.
 
 ## Files worth knowing about
 

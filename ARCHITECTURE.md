@@ -35,6 +35,8 @@ They are separate pages but intentionally share a handful of JS globals/classes.
 ### `world/ai.html` + `world/ai.js`
 - Loads `world/saved-world.js`, builds world/graph/route, trains city cars, handles stop/signals/generation loop.
 - Fitness: furthest route progress, plus continuous credit for slowing at stop signs, minus signal penalties.
+- Selection: a generation that reaches the target picks its leader from the cars that actually arrived (`world/js/selection.js`), not just the highest score.
+- Elites: a 5-entry hall of fame per start/target setup. Elites are re-run unchanged and the rest of the population is mutated copies of a random elite; finishers outrank non-finishers, ties go to the newer entry.
 - Steering: route-tangent guidance with a cross-track pull toward the centreline. Off-route progress is ignored.
 - Longitudinal rule layer: cars coast when a red/yellow light or an un-cleared stop sign is ahead. Stop signs clear once the car has actually stopped.
 - Only signals on the car's own approach count; perpendicular cross-road lights are ignored.
@@ -64,7 +66,7 @@ These are checked in as data artifacts. The editor can regenerate/replace them.
 
 ## Current status
 
-- Unit tests (`npm test`) cover geometry and the neural network.
+- Unit tests (`npm test`) cover geometry, the neural network, and generation selection.
 - Headless training/evaluation (`npm run train`, `npm run eval`) runs the real
   city loop in Node, seeded and repeatable.
 - The city route is completed reliably in headless runs (100 cars): every

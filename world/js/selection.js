@@ -19,3 +19,30 @@ function pickGenerationLeader(cars, success, scoreOf) {
         arrived,
     };
 }
+
+// Keep a small hall of fame. Finishers outrank everyone, then score. On a tie
+// the newer entry wins, so a plateau still gets fresh blood. An identical
+// brain is refreshed in place instead of taking up a second slot.
+function mergeElites(elites, candidate, limit) {
+    const list = Array.isArray(elites) ? elites.slice() : [];
+    if (candidate && candidate.brain) {
+        const serialized = JSON.stringify(candidate.brain);
+        const same = list.findIndex(
+            (elite) => elite && elite.brain && JSON.stringify(elite.brain) === serialized
+        );
+        if (same === -1) {
+            list.push(candidate);
+        } else {
+            list[same] = Object.assign({}, list[same], candidate);
+        }
+    }
+
+    list.sort((a, b) => {
+        const finished = (b.finished ? 1 : 0) - (a.finished ? 1 : 0);
+        if (finished !== 0) return finished;
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.generation || 0) - (a.generation || 0);
+    });
+
+    return list.slice(0, limit);
+}

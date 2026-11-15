@@ -61,6 +61,10 @@ const BEST_KEY = SETUP_KEY + ":best8";
 // "1" when the stored brain is known to have completed the route. Used so a
 // high-scoring non-finisher can never replace a brain that actually arrived.
 const FINISHED_KEY = SETUP_KEY + ":finished1";
+// A small hall of fame. One saved brain gets stuck in a local optimum; keeping
+// several lets the population keep exploring different lineages.
+const ELITES_KEY = SETUP_KEY + ":elites1";
+const ELITE_COUNT = 5;
 
 // Training settings
 const N = 100;
@@ -84,6 +88,7 @@ let frame = 0;
 let lastProgressFrame = 0;
 let topScore = -Infinity;
 let lastEndReason = "—";
+let eliteCount = 0;
 
 
 // Every light and stop sign, with the direction cars approach it from
@@ -241,6 +246,44 @@ function getStartBrain() {
     return brain.levels[0].inputs.length === expected ? brain : null;
 }
 
+// Elites are stored as { brain, score, finished, generation }. Older saves
+// only had a single brain, so migrate that one into the list on first read.
+function loadElites() {
+    let list = null;
+    try {
+        list = JSON.parse(localStorage.getItem(ELITES_KEY) || "null");
+    } catch (error) {
+        list = null;
+    }
+
+    const expected = cars[0].brain.levels[0].inputs.length;
+    if (Array.isArray(list)) {
+        const valid = list.filter(
+            (elite) =>
+                elite &&
+                elite.brain &&
+                Array.isArray(elite.brain.levels) &&
+                elite.brain.levels[0].inputs.length === expected
+        );
+        if (valid.length > 0) return valid;
+    }
+
+    const brain = getStartBrain();
+    if (!brain) return [];
+    return [
+        {
+            brain,
+            score: parseFloat(localStorage.getItem(BEST_KEY)) || 0,
+            finished: localStorage.getItem(FINISHED_KEY) === "1",
+            generation: 0,
+        },
+    ];
+}
+
+function saveElites(elites) {
+    localStorage.setItem(ELITES_KEY, JSON.stringify(elites));
+}
+
 function startGeneration() {
     cars = [];
     for (let i = 0; i < N; i++) {
@@ -255,12 +298,28 @@ function startGeneration() {
         cars.push(car);
     }
 
-    const start = getStartBrain();
-    if (start) {
-        const text = JSON.stringify(start);
+    const elites = loadElites();
+    eliteCount = elites.length;
+    if (elites.length > 0) {
+        // Always leave at least one car free to mutate, otherwise a tiny
+        // population would only ever re-run the hall and never explore.
+        const pristine = Math.min(elites.length, Math.max(0, cars.length - 1));
         for (let i = 0; i < cars.length; i++) {
-            cars[i].brain = JSON.parse(text);
-            if (i !== 0) {
+            // Keep the elites themselves intact at the front of the grid so
+            // their score is re-measured every generation, and mutate copies
+            // of a parent drawn from the hall. Parents are biased toward the
+            // best elite so weaker elites add diversity without diluting the
+            // selection pressure.
+            let elite;
+            if (i < pristine) {
+                elite = elites[i];
+            } else if (Math.random() < 0.6) {
+                elite = elites[0];
+            } else {
+                elite = elites[Math.floor(Math.random() * elites.length)];
+            }
+            cars[i].brain = JSON.parse(JSON.stringify(elite.brain));
+            if (i >= pristine) {
                 NeuralNetwork.mutate(cars[i].brain, MUTATION);
             }
         }
@@ -281,6 +340,9 @@ function endGeneration(success, reason) {
         scoreOf
     );
     const score = scoreOf(furthest);
+    // Read the hall before saving, so a freshly saved single brain is not both
+    // migrated and merged as a separate entry.
+    const storedElites = loadElites();
     const stored = parseFloat(localStorage.getItem(BEST_KEY));
     const wasFinished = localStorage.getItem(FINISHED_KEY) === "1";
     // Save on a new high score, or whenever this run finished and the stored
@@ -291,6 +353,20 @@ function endGeneration(success, reason) {
         localStorage.setItem(BEST_KEY, String(score));
         localStorage.setItem(FINISHED_KEY, arrived ? "1" : "0");
     }
+
+    // The hall of fame updates even when the single-brain gate declines, so a
+    // finisher always earns a slot and can seed future generations.
+    const elites = mergeElites(
+        storedElites,
+        {
+            brain: JSON.parse(JSON.stringify(furthest.brain)),
+            score,
+            finished: arrived,
+            generation,
+        },
+        ELITE_COUNT
+    );
+    saveElites(elites);
 
     lastEndReason =
         reason +
@@ -322,6 +398,9 @@ function endGeneration(success, reason) {
         stopped: cars.filter((c) => c.everStopped).length,
         finishers: finishers,
         selected: arrived ? "finisher" : "best",
+        elites: elites.length,
+        eliteScore: Math.round(elites[0] ? elites[0].score : 0),
+        eliteFinished: !!(elites[0] && elites[0].finished),
         bestEver: Math.round(saved ? score : stored),
         saved,
     });
@@ -336,15 +415,29 @@ function saveBrain() {
     // stop-credit, so the saved brain is the one that completes the route.
     const { leader, arrived } = pickGenerationLeader(cars, true, scoreOf);
     const chosen = leader || bestCar;
+    const score = scoreOf(chosen);
     localStorage.setItem(BRAIN_KEY, JSON.stringify(chosen.brain));
-    localStorage.setItem(BEST_KEY, String(scoreOf(chosen)));
+    localStorage.setItem(BEST_KEY, String(score));
     localStorage.setItem(FINISHED_KEY, arrived ? "1" : "0");
+    saveElites(
+        mergeElites(
+            loadElites(),
+            {
+                brain: JSON.parse(JSON.stringify(chosen.brain)),
+                score,
+                finished: arrived,
+                generation,
+            },
+            ELITE_COUNT
+        )
+    );
 }
 
 function discardBrain() {
     localStorage.removeItem(BRAIN_KEY);
     localStorage.removeItem(BEST_KEY);
     localStorage.removeItem(FINISHED_KEY);
+    localStorage.removeItem(ELITES_KEY);
     allowFallback = false;
     generation = 1;
     reachedCount = 0;
@@ -463,6 +556,7 @@ function animate() {
             ? "Progress: " + Math.round(bestCar.maxProgress || 0) + " / " + Math.round(route.length) + "<br>"
             : "Distance: " + Math.round(scoreOf(bestCar)) + "<br>") +
         "Best score: " + best + "<br>" +
+        "Elites kept: " + eliteCount + "<br>" +
         "Signal violations: " + violations + "<br>" +
         (route ? "Reached target: " + reachedCount + " times<br>" : "") +
         "Last end: " + lastEndReason;

@@ -384,6 +384,7 @@ function run() {
                 stopCredit: end.stopCredit,
                 finishers: end.finishers,
                 selected: end.selected,
+                elites: end.elites,
             });
         }
     }
@@ -411,6 +412,7 @@ function run() {
                 `${fmt(row.x)} , ${fmt(row.y)}`.padEnd(15),
                 `stopped=${row.stopped || 0}`,
                 `fin=${row.finishers || 0}`,
+                `elites=${row.elites || 0}`,
                 flags,
             ].join("  ")
         );
