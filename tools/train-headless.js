@@ -33,6 +33,7 @@ function parseArgs(argv) {
         seed: null,
         guidance: "center",
         stopBonus: null,
+        traffic: null,
         dumpControls: false,
         verbose: false,
     };
@@ -52,6 +53,7 @@ function parseArgs(argv) {
         else if (arg === "--save-brain") args.saveBrain = next, i++;
         else if (arg === "--seed") args.seed = Number(next), i++;
         else if (arg === "--stop-bonus") args.stopBonus = Number(next), i++;
+        else if (arg === "--traffic") args.traffic = Number(next), i++;
         else if (arg === "--dump-controls") args.dumpControls = true;
         else if (arg === "--verbose") args.verbose = true;
         else if (arg === "--guidance") args.guidance = next, i++;
@@ -159,6 +161,16 @@ if (args.stopBonus !== null) {
     );
 }
 
+// A/B switch: number of ambient rule-driven cars on the route.
+if (args.traffic !== null) {
+    source = mustReplace(
+        source,
+        "const TRAFFIC_COUNT = 4;",
+        `const TRAFFIC_COUNT = ${args.traffic};`,
+        "traffic"
+    );
+}
+
 // A/B switch: pull toward the route centreline (app default) or follow the
 // tangent alone, which is what let cars drift into the border.
 if (args.guidance === "tangent") {
@@ -188,7 +200,18 @@ globalThis.__headless = {
             reachedCount,
             lastEndReason,
             routeLength: route ? route.length : 0,
+            roadWidth: world.roadWidth,
             alive: cars.filter((c) => !c.damaged).length,
+            traffic: demoCars.filter(Boolean).length,
+            trafficProgress: demoCars
+                .filter(Boolean)
+                .map((c) => Math.round(c.progress || 0)),
+            trafficSpeed: demoCars
+                .filter(Boolean)
+                .map((c) => Number(c.speed.toFixed(2))),
+            trafficOff: demoCars
+                .filter(Boolean)
+                .map((c) => Math.round(route.distanceTo(c))),
             bestEver: parseFloat(localStorage.getItem(BEST_KEY)) || 0,
             lights: world.markings
                 .filter((m) => m instanceof Light)
@@ -336,12 +359,14 @@ function run() {
             (args.lookAhead !== null ? ` lookAhead=${args.lookAhead}` : "") +
             (args.seed !== null ? ` seed=${args.seed}` : "") +
             (args.stopBonus !== null ? ` stopBonus=${args.stopBonus}` : "") +
+            (args.traffic !== null ? ` traffic=${args.traffic}` : "") +
             ` guidance=${args.guidance}`
     );
 
     const startGeneration = headless.state().generation;
     const rows = [];
     let guard = 0;
+    let trafficMaxOff = 0;
 
     while (
         headless.state().generation < startGeneration + args.generations &&
@@ -350,6 +375,9 @@ function run() {
         const before = headless.state().generation;
         headless.step();
         guard++;
+        for (const off of headless.state().trafficOff) {
+            if (off > trafficMaxOff) trafficMaxOff = off;
+        }
 
         if (
             args.traceEvery > 0 &&
@@ -442,7 +470,17 @@ function run() {
             finished.bestEver
         )}/${routeLength} crowded=${last.crowded || 0} lastEnd=${
             finished.lastEndReason
-        }`
+        }` +
+            (finished.traffic > 0
+                ? `\ntraffic: progress=${JSON.stringify(
+                      finished.trafficProgress
+                  )} speed=${JSON.stringify(finished.trafficSpeed)}`
+                : "") +
+            (trafficMaxOff > 0
+                ? ` maxLaneOffset=${trafficMaxOff} roadHalfWidth=${
+                      headless.state().roadWidth / 2
+                  }`
+                : "")
     );
 
     if (args.saveBrain) {

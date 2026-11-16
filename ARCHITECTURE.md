@@ -41,6 +41,7 @@ They are separate pages but intentionally share a handful of JS globals/classes.
 - Longitudinal rule layer: cars coast when a red/yellow light or an un-cleared stop sign is ahead. Stop signs clear once the car has actually stopped.
 - Signals are filtered once at load time by `route.distanceTo(signal)`. Signals on other roads sit 54+ pixels off the route (own-road signals are at 0) and are ignored; before this, a car at a junction could obey a crossing light and deadlock.
 - Car-to-car yielding was implemented and rejected: 1/8 completions vs 4/8 without it, because speed-scaled steering loses authority when cars slow down. Cars still overlap; the trainer reports `crowded` pairs.
+- Ambient traffic: rule-driven `DUMMY` cars that follow the route in the right-hand lane, obey the same signals, and are recycled ahead of the leading learner. They are excluded from `cars`, so they never affect scoring, selection or the elite hall. They are also excluded from learner sensors and collisions: with them as obstacles the same 4-seed A/B dropped from 12/12 completions to 0/12, because a learner at 3.0 catches a slower lead car and both queues stop at the same line.
 - Headless equivalents live in `tools/train-headless.js` (one run) and `tools/eval-headless.js` (multi-seed).
 
 ## Shared state / data artifacts

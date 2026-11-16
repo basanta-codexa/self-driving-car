@@ -11,7 +11,7 @@ There are four entry points (they share code, but run as separate pages):
 - **`index.html`** — straight-road training. Spawns `N` AI cars on a 3-lane road with dummy traffic, tracks the furthest car each frame, and restarts a generation when all cars are damaged, stalled, or past the finish line. Draws the active network on a side canvas.
 - **`world/index.html`** — world editor. Edit a road graph and place markings (stop, crossing, light, start, target). Saves/exports a world as JS data.
 - **`world/drive.html`** — manual driving in an exported world (`world/saved-world.js`). Spawns at the last `Start` marker if one exists, otherwise the middle of the first road segment.
-- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs.
+- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs. A few rule-driven demo cars follow the same route in the right-hand lane to make the city look inhabited (visual layer only — see the measurements below).
 
 ## How it works (quick)
 
@@ -55,6 +55,7 @@ Useful flags for `npm run train`:
 - `--generations N` — how many generations to run
 - `--guidance center|tangent` — A/B the cross-track correction
 - `--stop-bonus N` — A/B the stop-credit weight
+- `--traffic N` — how many ambient demo cars to draw (`0` disables them)
 - `--dump-controls` — list every light/stop sign with how far it sits from
   the route (used to filter other roads' signals)
 - `--trace-every N --trace-gen N` — print the leader's position, speed,
@@ -66,26 +67,52 @@ violations and target completions.
 
 ### What the numbers look like
 
-These are measured, not estimates. Route length is `3833`.
+These are measured, not estimates. They are from the current export
+(`world/saved-world.js`), route length `3337`.
 
 | run | mean best progress | target completions | signal violations |
 |---|---:|---:|---:|
-| 100 cars, seed 7, 1 generation | 3892 | 1 / 1 | 0–2 |
-| 30 cars, seeds 1–6, 6 generations | 3428 | 13 / 36 | 0 |
+| 30 cars, seeds 1–4, 3 generations | 3396 | 12 / 12 | 0 |
 
-So at the app's default population the route is completed every generation.
-At 30 cars, roughly half the seeds finish within 6 generations; the rest stall
-around 2800–3000 where a car is waiting at a light or has not found the turn.
-The hall of fame changed these aggregates by less than seed noise (mean
-3486 → 3516, completions 14 → 13, violations 6 → 0). It is kept for its
+All four seeds finish every generation on this map. An earlier, longer export
+(route `3833`) was harder: 30 cars over 6 generations averaged 3428 with 13/36
+completions, and 100 cars finished every generation on seed 7. Runs from
+different exports are not comparable.
+
+On the older map, the hall of fame changed aggregates by less than seed noise
+(mean 3486 → 3516, completions 14 → 13, violations 6 → 0). It is kept for its
 structure, not because it made training dramatically better. Filtering signals
 that are not on the route changed the 30-car mean from 3516 to 3428 with the
 same 13 completions; it is kept because it removed a demonstrated deadlock.
 
+### Ambient traffic
+
+`world/ai.html` draws a few rule-driven cars that follow the route, keep to the
+right-hand lane, obey the same lights and stop signs, and are recycled ahead of
+the leading learner. They make the city look inhabited.
+
+They are deliberately **not** obstacles. Treating them as real traffic was
+implemented and measured over seeds 1–4, 30 cars, 3 generations:
+
+| config | mean best progress | target completions |
+|---|---:|---:|
+| learners ignore demo cars | 3396 | 12 / 12 |
+| demo cars are obstacles | 1838 | 0 / 12 |
+
+Parity in the first row is exact: with demo cars enabled, seeds 1–4 reproduce
+the no-traffic run digit for digit (same score, completions, violations and
+`crowded` count). Every seed lost the route in the second case. A learner at speed `3.0` catches a
+demo car at `1.3`, and at a red light both queues stop within ~25 px of the same
+line. Until learners can follow a lead car without losing steering authority
+(see the rejected yielding experiment), ambient traffic stays a visual layer.
+`--traffic N` sets the count and `--traffic 0` disables it; the trainer prints
+each demo car's route position and lane offset so their behaviour is checkable.
+
 ### Rejected: yielding to other cars
 
-A rule that slowed cars down when they closed on another car was implemented
-and measured over seeds 1–4, 100 cars, 2 generations:
+Measured on the previous export (route `3833`): a rule that slowed cars down
+when they closed on another car was implemented and measured over seeds 1–4,
+100 cars, 2 generations.
 
 | config | mean best progress | target completions | mean stacked pairs |
 |---|---:|---:|---:|
