@@ -11,7 +11,7 @@ There are four entry points (they share code, but run as separate pages):
 - **`index.html`** — straight-road training. Spawns `N` AI cars on a 3-lane road with dummy traffic, tracks the furthest car each frame, and restarts a generation when all cars are damaged, stalled, or past the finish line. Draws the active network on a side canvas.
 - **`world/index.html`** — world editor. Edit a road graph and place markings (stop, crossing, light, start, target). Saves/exports a world as JS data.
 - **`world/drive.html`** — manual driving in an exported world (`world/saved-world.js`). Spawns at the last `Start` marker if one exists, otherwise the middle of the first road segment.
-- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs. A few rule-driven demo cars follow the same route in the right-hand lane to make the city look inhabited (visual layer only — see the measurements below).
+- **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs. A few rule-driven demo cars share the route and the learner's lane, slower than the learners, so the population has to handle them instead of driving through them (see the measurements below).
 
 ## How it works (quick)
 
@@ -55,11 +55,13 @@ Useful flags for `npm run train`:
 - `--generations N` — how many generations to run
 - `--guidance center|tangent` — A/B the cross-track correction
 - `--stop-bonus N` — A/B the stop-credit weight
-- `--traffic N` — how many ambient demo cars to draw (`0` disables them)
+- `--traffic N` — how many demo cars to place in the learner's lane (`0`
+  disables them)
 - `--dump-controls` — list every light/stop sign with how far it sits from
   the route (used to filter other roads' signals)
-- `--trace-every N --trace-gen N` — print the leader's position, speed,
-  guidance, brake state, nearest lights and controls every `N` frames
+- `--trace-every N --trace-gen N` - print the leader's position, speed,
+  guidance, brake state, nearest lights, controls and route gap to the nearest
+  ambient car every `N` frames
 - `--verbose` — dump the full generation-end record as JSON
 
 `npm run eval` runs independent seeds and reports mean/median progress,
@@ -87,26 +89,62 @@ same 13 completions; it is kept because it removed a demonstrated deadlock.
 
 ### Ambient traffic
 
-`world/ai.html` draws a few rule-driven cars that follow the route, keep to the
-right-hand lane, obey the same lights and stop signs, and are recycled ahead of
-the leading learner. They make the city look inhabited.
+`world/ai.html` puts three rule-driven cars on the route, in the learner's
+lane and slower than the learners (`1.5` vs `3.0`). They are real obstacles:
+the sensors see them and touching one ends that car's run. They are re-created
+at the same positions every generation, so each population faces the same
+traffic as the one before it - that is what makes it a learnable task instead
+of noise.
 
-They are deliberately **not** obstacles. Treating them as real traffic was
-implemented and measured over seeds 1–4, 30 cars, 3 generations:
+What the population actually learns is to **follow**: after catching a car, the
+generation-9 trace shows the route gap to the nearest car oscillating between
+about 14 and 150 px and never going negative. The learner slows down behind the
+car instead of driving through it, then completes the route once the car leaves
+the map near the target. It does not overtake. An earlier reading of the trace
+suggested a pass from the lane offset alone; adding the route-gap column
+(`gap=` in `--trace-every` output) showed that was wrong. That column exists so
+this distinction stays checkable rather than inferred.
 
-| config | mean best progress | target completions |
+They cost training speed. On seed 1, 30 cars, this export (route `3337`):
+
+| generation | best progress |
+|---|---:|
+| 1 | 1566 |
+| 2–5 | 1716 |
+| 6–8 | 1871 |
+| 9–12 | 3283 (target reached) |
+
+Without traffic the same population reaches the target in every one of those
+generations; with traffic it needs nine, then finishes every generation after
+that. Across seeds the cost is real:
+
+| seeds 1-4, 30 cars, 10 generations | mean best progress | target completions |
 |---|---:|---:|
-| learners ignore demo cars | 3396 | 12 / 12 |
-| demo cars are obstacles | 1838 | 0 / 12 |
+| no traffic | 3396 | 40 / 40 |
+| three in-lane cars | 2367 | 7 / 40 |
 
-Parity in the first row is exact: with demo cars enabled, seeds 1–4 reproduce
-the no-traffic run digit for digit (same score, completions, violations and
-`crowded` count). Every seed lost the route in the second case. A learner at speed `3.0` catches a
-demo car at `1.3`, and at a red light both queues stop within ~25 px of the same
-line. Until learners can follow a lead car without losing steering authority
-(see the rejected yielding experiment), ambient traffic stays a visual layer.
-`--traffic N` sets the count and `--traffic 0` disables it; the trainer prints
-each demo car's route position and lane offset so their behaviour is checkable.
+Seeds 1 and 2 learn it (2 and 5 completions by generation 10). Seed 3 stalls at
+`1936` and seed 4 at `738`. Seed 4's failure is not the cars: it sits at
+`(193,1074)` with `v=0.00` and `ctl=right`, a pre-existing controller deadlock
+where the network asks for a turn but never accelerates, so the car cannot
+rotate. Traffic only has to perturb the population into that basin. That is a
+real limitation of the current controller, not a hidden success.
+
+Earlier versions are worth recording, because they looked plausible and were
+not:
+
+- **Decorative** (excluded from sensors and collisions) scored exactly the same
+  as no traffic — 3396 mean, 12/12 completions — because the learners never had
+  to react to a car. This is what shipped first: the cars were scenery.
+- **Faster than the learners** (`3.4`) and recycled just ahead of the leader
+  also scored the same, for the same reason: the learner never met one. That is
+  the version that made traffic look decorative.
+- **Obstacles recycled ahead of the leader** was worse than useless: 1838 mean
+  progress, 0/12 completions, because a fresh car appeared just in front of the
+  leader every time it passed one. Fixed positions plus a per-generation reset
+  are what made the task learnable.
+
+`--traffic N` sets how many cars are placed (default 3, `0` disables them).
 
 ### Rejected: yielding to other cars
 

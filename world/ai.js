@@ -75,17 +75,17 @@ const LOOK_AHEAD = 100;    // how far ahead on the route the car "looks"
 const SIGNAL_RANGE = 120;  // how far ahead a car "feels" a signal
 const STOP_SPEED = 0.8;    // max speed allowed when crossing a stop line
 const STOP_BONUS = 150;    // maximum reward for slowing to a stop
-const TRAFFIC_COUNT = 4;   // ambient rule-driven cars on the route
-const TRAFFIC_SPEED = 3.4; // faster than learners (3.0) so they pull away
-const TRAFFIC_LANE = 27;   // right-hand lane offset from the centreline
-const TRAFFIC_START = 320; // route position they start from
-const TRAFFIC_AHEAD = 260; // respawn this far ahead of the leading learner
-const TRAFFIC_LAG = 120;   // recycle a car this far behind the leader
-const TRAFFIC_END = 40;    // how close to the target before recycling
+const TRAFFIC_COUNT = 3;   // ambient cars sharing the learner's lane
+const TRAFFIC_SPEED = 1.5; // slower than learners (3.0), so they must be passed
+const TRAFFIC_LANE = 0;    // 0 = the learner's lane: these are cars to overtake
+const TRAFFIC_START = 300; // route position of the first car
+const TRAFFIC_SPACING = 640; // gap between their starting positions
+const TRAFFIC_END = 40;    // they leave the map this close to the target
 const TRAFFIC_STOP_RANGE = 60;
 
 
 let violations = 0;
+let trafficHits = 0;
 let zoom = 1.5;
 let cars = [];
 let demoCars = [];
@@ -130,7 +130,6 @@ function buildControls() {
 }
 
 startGeneration();
-startTraffic();
 
 function checkSignals(car) {
     const hx = -Math.sin(car.angle);
@@ -351,6 +350,18 @@ function startGeneration() {
     frame = 0;
     lastProgressFrame = 0;
     topScore = -Infinity;
+    trafficHits = 0;
+    // Traffic is re-created with every generation so each population faces the
+    // same cars, at the same points, as the one before it.
+    startTraffic();
+}
+
+// Did this car's run end on another car rather than on a wall?
+function hitTraffic(car) {
+    for (const other of demoCars) {
+        if (other && polysIntersect(car.polygon, other.polygon)) return true;
+    }
+    return false;
 }
 
 function endGeneration(success, reason) {
@@ -530,14 +541,22 @@ function closePairs(others, limit = 24) {
 
 // ---------------------------------------------------------------------------
 // Ambient traffic. These are not learners: they follow the route on rules
-// alone, in the right-hand lane, so the city looks inhabited. They are kept out
-// of `cars`, so they never affect scoring, selection, or the elite hall.
+// alone, in the same lane, and they are deliberately slower than the learners.
+// The point is the encounter: to score well a learner has to handle them instead
+// of driving through them.
 //
-// They are also not physical obstacles for the learners. Making them collide
-// was measured: 4 cars on the route dropped mean progress from 3396 to 1838 and
-// completions from 12/12 to 0/12, because a learner at 3.0 catches a slower car
-// and both queues stop at the same stop line. Learners cannot yet follow a lead
-// car, so ambient traffic stays a visual layer until they can.
+// Two properties make that a learnable task rather than noise:
+//   - the cars are re-created at the same route positions every generation, so
+//     the problem is stationary and an elite's mutations are comparable;
+//   - they are real obstacles: the sensor sees them and touching one ends that
+//     car's run, exactly like hitting a wall.
+// They are kept out of `cars`, so they never affect scoring, selection or the
+// elite hall directly.
+//
+// Measured behaviour: the population learns to slow down and follow a car at
+// roughly 14-150 px of route distance, then carry on when it turns off at the
+// target. It does not overtake; the trainer's `gap=` trace column is what shows
+// that, so do not describe this as lane-changing past traffic.
 // ---------------------------------------------------------------------------
 
 // The route point at `progress`, shifted into the right-hand lane.
@@ -581,25 +600,18 @@ function startTraffic() {
     demoCars = [];
     if (!route || TRAFFIC_COUNT <= 0) return;
 
-    // Space the cars along the route so the road is never empty.
-    const span = route.length - TRAFFIC_START;
+    // Same fixed positions every generation, so the task does not move under
+    // the population while it is being selected.
     for (let i = 0; i < TRAFFIC_COUNT; i++) {
-        demoCars.push(makeDemoCar(TRAFFIC_START + (i * span) / TRAFFIC_COUNT));
+        const at = Math.min(
+            TRAFFIC_START + i * TRAFFIC_SPACING,
+            route.length - TRAFFIC_END
+        );
+        demoCars.push(makeDemoCar(at));
     }
 }
 
-// Where a recycled car re-enters: ahead of the leading learner, so the pack
-// never meets it head-on, but on the road and visible.
-function demoRespawnProgress(i) {
-    const lead = bestCar ? bestCar.progress || 0 : 0;
-    const ahead = lead + TRAFFIC_AHEAD + i * 90;
-    return Math.min(
-        route.length - TRAFFIC_END,
-        Math.max(TRAFFIC_START, ahead)
-    );
-}
-
-// Steering for ambient cars: aim at the centreline shifted into the right lane.
+// Steering for ambient cars: follow the route (shifted into their lane, if any).
 function demoSteer(car) {
     const p = route.progress(car);
     const look = route.pointAt(p + LOOK_AHEAD);
@@ -647,24 +659,19 @@ function demoBrake(car) {
 function updateTraffic() {
     if (!route) return;
 
-    const lead = bestCar ? bestCar.progress || 0 : 0;
     for (let i = 0; i < demoCars.length; i++) {
         const car = demoCars[i];
-
-        // No room ahead of the leader: park the slot until the next
-        // generation, rather than recycling it into the pack.
-        if (route.length - TRAFFIC_END - lead < TRAFFIC_AHEAD) {
-            demoCars[i] = null;
+        if (!car) {
+            demoCars[i] = makeDemoCar(
+                Math.min(TRAFFIC_START + i * TRAFFIC_SPACING, route.length - TRAFFIC_END)
+            );
             continue;
         }
 
-        const spent =
-            !car ||
-            car.damaged ||
-            car.progress >= route.length - TRAFFIC_END ||
-            car.progress < lead - TRAFFIC_LAG;
-        if (spent) {
-            demoCars[i] = makeDemoCar(demoRespawnProgress(i));
+        // Finished: leave the map. Parking here would put a stopped car inside
+        // the target zone and make the destination unreachable.
+        if (car.damaged || car.progress >= route.length - TRAFFIC_END) {
+            demoCars[i] = null;
             continue;
         }
 
@@ -678,6 +685,10 @@ function updateTraffic() {
         car.progress = route.progress(car);
         car.maxProgress = Math.max(car.maxProgress, car.progress);
     }
+
+    // Drop finished/crashed slots rather than leaving null holes for the
+    // learners' sensors and collision code to trip over.
+    demoCars = demoCars.filter(Boolean);
 }
 
 function animate() {
@@ -690,10 +701,11 @@ function animate() {
         if (car.damaged) continue;
         car.guidance = guidanceFor(car).concat(checkSignals(car));
         car.brake = car.guidance[2] > 0.05;
-        // Ambient cars are not obstacles: see the traffic section above. They
-        // are excluded from sensors and collisions so a decorative car cannot
-        // end a generation.
-        car.update(borders, []);
+        // Ambient cars are real obstacles: the sensors see them and touching
+        // one ends that car's run, the same as a wall.
+        const wasDamaged = car.damaged;
+        car.update(borders, demoCars);
+        if (!wasDamaged && car.damaged && hitTraffic(car)) trafficHits++;
         if (route) {
             const pos = new Point(car.x, car.y);
             car.progress = route.progress(pos);

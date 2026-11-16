@@ -165,7 +165,7 @@ if (args.stopBonus !== null) {
 if (args.traffic !== null) {
     source = mustReplace(
         source,
-        "const TRAFFIC_COUNT = 4;",
+        /const TRAFFIC_COUNT = \d+;/,
         `const TRAFFIC_COUNT = ${args.traffic};`,
         "traffic"
     );
@@ -203,12 +203,17 @@ globalThis.__headless = {
             roadWidth: world.roadWidth,
             alive: cars.filter((c) => !c.damaged).length,
             traffic: demoCars.filter(Boolean).length,
+            trafficCount: TRAFFIC_COUNT,
+            trafficHits: trafficHits,
             trafficProgress: demoCars
                 .filter(Boolean)
                 .map((c) => Math.round(c.progress || 0)),
             trafficSpeed: demoCars
                 .filter(Boolean)
                 .map((c) => Number(c.speed.toFixed(2))),
+            trafficDamaged: demoCars
+                .filter(Boolean)
+                .map((c) => c.damaged),
             trafficOff: demoCars
                 .filter(Boolean)
                 .map((c) => Math.round(route.distanceTo(c))),
@@ -245,6 +250,13 @@ globalThis.__headless = {
             maxProgress: bestCar.maxProgress || 0,
             offRoute: !!bestCar.offRoute,
             damaged: bestCar.damaged,
+            // Route distance to the nearest ambient car: positive = it is
+            // still ahead, negative = it has just been passed.
+            trafficGap: demoCars
+                .filter(Boolean)
+                .map((c) => Math.round((c.progress || 0) - (bestCar.progress || 0)))
+                .sort((a, b) => Math.abs(a) - Math.abs(b))
+                .slice(0, 2),
             brake: !!bestCar.brake,
             signalsNear: controls
                 .map((c, i) => {
@@ -367,6 +379,8 @@ function run() {
     const rows = [];
     let guard = 0;
     let trafficMaxOff = 0;
+    let trafficPeakProgress = 0;
+    let trafficHits = 0;
 
     while (
         headless.state().generation < startGeneration + args.generations &&
@@ -377,6 +391,12 @@ function run() {
         guard++;
         for (const off of headless.state().trafficOff) {
             if (off > trafficMaxOff) trafficMaxOff = off;
+        }
+        for (const p of headless.state().trafficProgress) {
+            if (p > trafficPeakProgress) trafficPeakProgress = p;
+        }
+        if (headless.state().trafficHits > trafficHits) {
+            trafficHits = headless.state().trafficHits;
         }
 
         if (
@@ -395,6 +415,7 @@ function run() {
                         `guide=[${car.guidance.map((g) => Number(g).toFixed(2)).join(",")}] ` +
                         `brake=${car.brake ? "Y" : "n"} ` +
                         `lights=[${headless.state().lights.join(",")}] ` +
+                        `gap=${JSON.stringify(car.trafficGap)} ` +
                         `near=${JSON.stringify(car.signalsNear)} ` +
                         `ctl=${Object.entries(car.controls)
                             .filter(([, on]) => on)
@@ -472,13 +493,10 @@ function run() {
             finished.lastEndReason
         }` +
             (finished.traffic > 0
-                ? `\ntraffic: progress=${JSON.stringify(
-                      finished.trafficProgress
-                  )} speed=${JSON.stringify(finished.trafficSpeed)}`
-                : "") +
-            (trafficMaxOff > 0
-                ? ` maxLaneOffset=${trafficMaxOff} roadHalfWidth=${
-                      headless.state().roadWidth / 2
+                ? `\ntraffic: peakProgress=${trafficPeakProgress}/${routeLength}` +
+                  ` maxHitsInAGeneration=${trafficHits}` +
+                  ` maxLaneOffset=${trafficMaxOff} of road half-width ${
+                      finished.roadWidth / 2
                   }`
                 : "")
     );
