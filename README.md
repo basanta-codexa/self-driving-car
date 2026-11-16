@@ -55,6 +55,8 @@ Useful flags for `npm run train`:
 - `--generations N` — how many generations to run
 - `--guidance center|tangent` — A/B the cross-track correction
 - `--stop-bonus N` — A/B the stop-credit weight
+- `--dump-controls` — list every light/stop sign with how far it sits from
+  the route (used to filter other roads' signals)
 - `--trace-every N --trace-gen N` — print the leader's position, speed,
   guidance, brake state, nearest lights and controls every `N` frames
 - `--verbose` — dump the full generation-end record as JSON
@@ -69,14 +71,32 @@ These are measured, not estimates. Route length is `3833`.
 | run | mean best progress | target completions | signal violations |
 |---|---:|---:|---:|
 | 100 cars, seed 7, 1 generation | 3892 | 1 / 1 | 0–2 |
-| 30 cars, seeds 1–6, 6 generations | 3516 | 13 / 36 | 0 |
+| 30 cars, seeds 1–6, 6 generations | 3428 | 13 / 36 | 0 |
 
 So at the app's default population the route is completed every generation.
 At 30 cars, roughly half the seeds finish within 6 generations; the rest stall
 around 2800–3000 where a car is waiting at a light or has not found the turn.
 The hall of fame changed these aggregates by less than seed noise (mean
 3486 → 3516, completions 14 → 13, violations 6 → 0). It is kept for its
-structure, not because it made training dramatically better.
+structure, not because it made training dramatically better. Filtering signals
+that are not on the route changed the 30-car mean from 3516 to 3428 with the
+same 13 completions; it is kept because it removed a demonstrated deadlock.
+
+### Rejected: yielding to other cars
+
+A rule that slowed cars down when they closed on another car was implemented
+and measured over seeds 1–4, 100 cars, 2 generations:
+
+| config | mean best progress | target completions | mean stacked pairs |
+|---|---:|---:|---:|
+| cars pass through each other | 3895 | 4 / 8 | 568 |
+| yield to slower traffic | 3244 | 1 / 8 | 611 |
+
+It lost on both axes. Tracing showed the pack slowing down also weakens
+steering, which is scaled by speed, so cars that yield are more likely to
+miss a turn and crash. The experiment is not enabled; the number of cars
+sitting on top of each other is still reported as `crowded` in the trainer
+output so the problem stays visible.
 
 ## Controls
 
@@ -105,6 +125,12 @@ Training keeps a hall of fame (5 brains per start/target setup). The best cars
 are re-run unchanged each generation, and the rest of the population is mutated
 copies of a random elite. Finishers beat non-finishers when ranking, so a car
 that completed the route is never displaced by one that merely scored well.
+
+Signals are filtered by whether they sit on the route being driven, checked
+once at load time. Before that, a car at a junction could obey a crossing
+road's light and deadlock between two signals that never turn green together.
+Cars still pass through each other: a car-to-car yielding rule was implemented
+and measured, and it made things worse (see below), so it is not enabled.
 
 ## Files worth knowing about
 

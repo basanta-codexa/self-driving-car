@@ -76,6 +76,7 @@ for (const seed of seeds) {
     const match = output.match(/bestEver=(\d+)\/(\d+)/);
     const violations = output.match(/violations=(\d+)/);
     const reached = output.match(/reachedTarget=(\d+)/);
+    const crowded = output.match(/crowded=(\d+)/);
     if (!match) {
         console.error(`Could not parse seed ${seed} output:\n${output}`);
         process.exit(1);
@@ -87,12 +88,14 @@ for (const seed of seeds) {
         routeLength: Number(match[2]),
         violations: Number(violations ? violations[1] : 0),
         reached: Number(reached ? reached[1] : 0),
+        crowded: Number(crowded ? crowded[1] : 0),
     });
 
     console.log(
         `seed ${String(seed).padStart(3)}  best ${String(match[1]).padStart(4)}/${match[2]}` +
             `  violations ${String(violations ? violations[1] : 0).padStart(4)}` +
-            `  reached ${reached ? reached[1] : 0}`
+            `  reached ${reached ? reached[1] : 0}` +
+            `  crowded ${crowded ? crowded[1] : 0}`
     );
 }
 
@@ -102,6 +105,8 @@ const mean = values.reduce((a, b) => a + b, 0) / values.length;
 const median = values[Math.floor(values.length / 2)];
 const violations = results.reduce((sum, r) => sum + r.violations, 0);
 const reached = results.reduce((sum, r) => sum + r.reached, 0);
+const crowded =
+    results.reduce((sum, r) => sum + r.crowded, 0) / results.length;
 
 console.log(`config: ${args.label}`);
 console.log(`seeds: ${seeds.join(", ")}`);
@@ -111,7 +116,7 @@ for (const r of results) {
     console.log(
         `  seed ${String(r.seed).padStart(3)}  best ${String(r.best).padStart(4)}` +
             `/${routeLength}  violations ${String(r.violations).padStart(4)}` +
-            `  reached ${r.reached}`
+            `  reached ${r.reached}  crowded ${r.crowded}`
     );
 }
 console.log("");
@@ -121,3 +126,4 @@ console.log(
     }  (route ${routeLength})`
 );
 console.log(`total violations: ${violations}  total reached: ${reached}`);
+console.log(`mean crowded pairs at generation end: ${crowded.toFixed(1)}`);

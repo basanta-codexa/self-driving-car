@@ -39,7 +39,8 @@ They are separate pages but intentionally share a handful of JS globals/classes.
 - Elites: a 5-entry hall of fame per start/target setup. Elites are re-run unchanged and the rest of the population is mutated copies of a random elite; finishers outrank non-finishers, ties go to the newer entry.
 - Steering: route-tangent guidance with a cross-track pull toward the centreline. Off-route progress is ignored.
 - Longitudinal rule layer: cars coast when a red/yellow light or an un-cleared stop sign is ahead. Stop signs clear once the car has actually stopped.
-- Only signals on the car's own approach count; perpendicular cross-road lights are ignored.
+- Signals are filtered once at load time by `route.distanceTo(signal)`. Signals on other roads sit 54+ pixels off the route (own-road signals are at 0) and are ignored; before this, a car at a junction could obey a crossing light and deadlock.
+- Car-to-car yielding was implemented and rejected: 1/8 completions vs 4/8 without it, because speed-scaled steering loses authority when cars slow down. Cars still overlap; the trainer reports `crowded` pairs.
 - Headless equivalents live in `tools/train-headless.js` (one run) and `tools/eval-headless.js` (multi-seed).
 
 ## Shared state / data artifacts

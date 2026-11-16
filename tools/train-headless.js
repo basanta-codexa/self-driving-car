@@ -18,7 +18,8 @@ const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 
-function parseArgs(argv) {    const args = {
+function parseArgs(argv) {
+    const args = {
         generations: 3,
         cars: 100,
         maxFrames: 4500,
@@ -32,6 +33,7 @@ function parseArgs(argv) {    const args = {
         seed: null,
         guidance: "center",
         stopBonus: null,
+        dumpControls: false,
         verbose: false,
     };
 
@@ -50,6 +52,7 @@ function parseArgs(argv) {    const args = {
         else if (arg === "--save-brain") args.saveBrain = next, i++;
         else if (arg === "--seed") args.seed = Number(next), i++;
         else if (arg === "--stop-bonus") args.stopBonus = Number(next), i++;
+        else if (arg === "--dump-controls") args.dumpControls = true;
         else if (arg === "--verbose") args.verbose = true;
         else if (arg === "--guidance") args.guidance = next, i++;
         else {
@@ -190,6 +193,13 @@ globalThis.__headless = {
             lights: world.markings
                 .filter((m) => m instanceof Light)
                 .map((m) => m.state),
+            controls: controls.map((c) => ({
+                type: c.marking instanceof Light ? "light" : "stop",
+                state: c.marking instanceof Light ? c.marking.state : "stop",
+                x: Math.round(c.marking.center.x),
+                y: Math.round(c.marking.center.y),
+                routeOffset: route ? Number(route.distanceTo(c.marking.center).toFixed(1)) : null,
+            })),
         };
     },
     step() {
@@ -315,6 +325,11 @@ function fmt(value, digits = 0) {
 }
 
 function run() {
+    if (args.dumpControls) {
+        for (const c of headless.state().controls) console.log(c);
+        return;
+    }
+
     console.log(
         `headless training: cars=${args.cars} generations=${args.generations}` +
             ` maxFrames=${args.maxFrames} stall=${args.stallFrames}` +
@@ -382,6 +397,7 @@ function run() {
                 nearestSignal: end.nearestSignal,
                 stopped: end.stopped,
                 stopCredit: end.stopCredit,
+                crowded: end.crowded,
                 finishers: end.finishers,
                 selected: end.selected,
                 elites: end.elites,
@@ -411,6 +427,7 @@ function run() {
                 String(row.bestEver).padStart(6),
                 `${fmt(row.x)} , ${fmt(row.y)}`.padEnd(15),
                 `stopped=${row.stopped || 0}`,
+                `crowded=${row.crowded || 0}`,
                 `fin=${row.finishers || 0}`,
                 `elites=${row.elites || 0}`,
                 flags,
@@ -419,10 +436,13 @@ function run() {
     }
 
     const finished = headless.state();
+    const last = rows[rows.length - 1] || {};
     console.log(
         `\nsummary: violations=${finished.violations} reachedTarget=${finished.reachedCount} bestEver=${Math.round(
             finished.bestEver
-        )}/${routeLength} lastEnd=${finished.lastEndReason}`
+        )}/${routeLength} crowded=${last.crowded || 0} lastEnd=${
+            finished.lastEndReason
+        }`
     );
 
     if (args.saveBrain) {

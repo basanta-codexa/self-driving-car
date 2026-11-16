@@ -108,7 +108,14 @@ function buildControls() {
         const dir = subtract(junction, m.center);
         if (magnitude(dir) < 1) continue;
 
-        list.push({ marking: m, dir: normalize(dir) });
+        list.push({
+            marking: m,
+            dir: normalize(dir),
+            // How far the signal sits from the route being driven. Signals on
+            // other roads are hundreds of pixels away; the ones that actually
+            // govern this route are on it. Measured on this map: 0 vs 54+.
+            routeOffset: route ? route.distanceTo(m.center) : 0,
+        });
     }
     return list;
 }
@@ -129,6 +136,11 @@ function checkSignals(car) {
         const rel = subtract(c.marking.center, car);
         const d = dot(rel, c.dir);
         const lateral = Math.abs(dot(rel, perpendicular(c.dir)));
+
+        // Ignore signals that are not on the road this car is driving. Checked
+        // once at load time against the route, because the car's own position
+        // at a junction makes any position-based test ambiguous.
+        if (c.routeOffset > world.roadWidth * 0.12) continue;
 
         // Ignore signals on other roads, or for traffic heading the other way.
         // A crossing road's light is perpendicular to this car, so a weak
@@ -396,6 +408,7 @@ function endGeneration(success, reason) {
         nearestSignal: nearestSignalInfo(furthest),
         alive: cars.filter((c) => !c.damaged).length,
         stopped: cars.filter((c) => c.everStopped).length,
+        crowded: closePairs(cars.filter((c) => !c.damaged)),
         finishers: finishers,
         selected: arrived ? "finisher" : "best",
         elites: elites.length,
@@ -491,6 +504,18 @@ function guidanceFor(car) {
     // Turn it into 0..1, reaching 1 at a 90 degree bend
     const amount = Math.min(1, Math.abs(rel) / (Math.PI / 2));
     return rel > 0 ? [0, amount] : [amount, 0];
+}
+
+// Pairs of cars sitting almost on top of each other. A rough visual quality
+// measure: following traffic should not stack like ghosts.
+function closePairs(others, limit = 24) {
+    let pairs = 0;
+    for (let i = 0; i < others.length; i++) {
+        for (let j = i + 1; j < others.length; j++) {
+            if (distance(others[i], others[j]) < limit) pairs++;
+        }
+    }
+    return pairs;
 }
 
 function animate() {
