@@ -603,6 +603,28 @@ document.querySelectorAll(".mode").forEach((el) =>
 );
 
 // ---------------------------------------------------------------------------
+// Horn sound. Browsers block autoplay, so the first click/keypress unlocks it.
+// ---------------------------------------------------------------------------
+const hornSound = new Audio("dragon-studio-car-honk-386166.mp3");
+hornSound.preload = "auto";
+hornSound.volume = 0.6;
+let soundUnlocked = false;
+let hornWasOn = false;
+function unlockSound() {
+    if (soundUnlocked) return;
+    hornSound
+        .play()
+        .then(() => {
+            hornSound.pause();
+            hornSound.currentTime = 0;
+            soundUnlocked = true;
+        })
+        .catch(() => {});
+}
+window.addEventListener("pointerdown", unlockSound);
+window.addEventListener("keydown", unlockSound);
+
+// ---------------------------------------------------------------------------
 // HUD + loop
 // ---------------------------------------------------------------------------
 const hud = document.getElementById("hud");
@@ -643,6 +665,7 @@ function updateHud() {
         "ped     " + (obs.ped ? Math.round(obs.ped.distance) + "px" : "-") + "   horn " + (cmd.horn ? "ON" : "off"),
         "arrived " + (m.arrived ? "YES" : "no") + "   t " + m.time.toFixed(1) + "s",
         "collisions " + m.collisions + "  near " + m.nearMisses + "  violations " + m.violations,
+        "sound   " + (soundUnlocked ? "on" : "click to enable"),
     ].join("<br>");
 }
 
@@ -661,6 +684,14 @@ function animate(now) {
     }
     syncAgents();
     updateCamera(elapsed);
+
+    const hornOn = !!(sim.lastCmd && sim.lastCmd.horn);
+    if (hornOn && !hornWasOn && soundUnlocked) {
+        hornSound.currentTime = 0;
+        hornSound.play().catch(() => {});
+    }
+    hornWasOn = hornOn;
+
     hornAge += elapsed;
     if (hornAge < 0.6) {
         const k = hornAge / 0.6;

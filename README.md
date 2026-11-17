@@ -2,7 +2,7 @@
 
 Plain HTML, CSS and JavaScript. No framework, no build step. Includes a world editor, an evolutionary training demo, and a 2D/3D city simulation.
 
-![3D city view](docs/3d-city.png)
+![3D city view](docs/3d-city-v2.png)
 
 ## Run
 

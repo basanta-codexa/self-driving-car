@@ -11,6 +11,23 @@
     window.addEventListener("resize", resize);
 
     const renderer = new SIM.Renderer(canvas);
+
+    const hornSound = new Audio("dragon-studio-car-honk-386166.mp3");
+    hornSound.preload = "auto";
+    hornSound.volume = 0.6;
+    let soundUnlocked = false;
+    let hornWasOn = false;
+    function unlockSound() {
+        if (soundUnlocked) return;
+        hornSound.play().then(() => {
+            hornSound.pause();
+            hornSound.currentTime = 0;
+            soundUnlocked = true;
+        }).catch(() => {});
+    }
+    window.addEventListener("pointerdown", unlockSound);
+    window.addEventListener("keydown", unlockSound);
+
     let sim;
     let running = true;
     let timeScale = 1;
@@ -20,6 +37,7 @@
     function reset() {
         sim = new SIM.Simulation(SIM.scene.createIntersectionScene());
         accumulator = 0;
+        hornWasOn = false;
         window.simDebug = { sim, reset, step: () => sim.step() };
     }
     reset();
@@ -77,6 +95,12 @@
             }
             if (steps === 30) accumulator = 0; // avoid spiral of death
         }
+        const hornOn = !!(sim.lastCmd && sim.lastCmd.horn);
+        if (hornOn && !hornWasOn && soundUnlocked) {
+            hornSound.currentTime = 0;
+            hornSound.play().catch(() => {});
+        }
+        hornWasOn = hornOn;
         renderer.render(sim);
         requestAnimationFrame(loop);
     }
