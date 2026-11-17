@@ -5,6 +5,13 @@
   "scripts": {
     "test": "node --test",
     "train": "node tools/train-headless.js",
-    "eval": "node tools/eval-headless.js"
+    "eval": "node tools/eval-headless.js",
+    "sim": "node tools/sim-headless.js",
+    "sim:events": "node tools/sim-headless.js --events",
+    "sim:city": "node tools/sim-headless.js --scene city --blocks 6 --steps 20000",
+    "sim:huge": "node tools/sim-headless.js --scene city --blocks 14 --traffic-routes 18 --steps 40000",
+    "learn:train": "node tools/train-policy.js",
+    "learn:dagger": "node tools/dagger-policy.js",
+    "learn:bench": "node tools/bench-policy.js"
   }
 }

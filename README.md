@@ -6,12 +6,14 @@ No framework, no build step — just HTML, CSS, and JavaScript.
 
 ## What’s in this repo
 
-There are four entry points (they share code, but run as separate pages):
+There are five entry points (they share code, but run as separate pages):
 
 - **`index.html`** — straight-road training. Spawns `N` AI cars on a 3-lane road with dummy traffic, tracks the furthest car each frame, and restarts a generation when all cars are damaged, stalled, or past the finish line. Draws the active network on a side canvas.
 - **`world/index.html`** — world editor. Edit a road graph and place markings (stop, crossing, light, start, target). Saves/exports a world as JS data.
 - **`world/drive.html`** — manual driving in an exported world (`world/saved-world.js`). Spawns at the last `Start` marker if one exists, otherwise the middle of the first road segment.
 - **`world/ai.html`** — city training in an exported world. If a `Start` and reachable `Target` exist it builds a route and scores cars by furthest route progress plus stop-credit and signal penalties; otherwise it falls back to distance-based behavior. Steering stays learned; a small traffic-rule layer handles braking for lights and stop signs. A few rule-driven demo cars share the route and the learner's lane, slower than the learners, so the population has to handle them instead of driving through them (see the measurements below).
+- **`sim/index.html`** — new layered autonomous-driver simulation. A rule-based ego car drives a signalised intersection with sidewalks, pedestrians, a jaywalker, crosswalks, rule-driven traffic, horn warnings and a proper destination stop. This is the foundation for a genuinely realistic driving sim; see `sim/README.md`.
+- **`sim/3d.html`** — the same simulation rendered in true 3D with vendored Three.js: real perspective camera, lighting, shadows, fog, extruded buildings, trees, traffic and signals. Follow / Orbit / Top-down camera modes. No CDN or build step.
 
 ## How it works (quick)
 
@@ -35,6 +37,33 @@ Then visit:
 - `http://localhost:8000/world/ai.html`
 
 `drive.html` and `ai.html` expect `world/saved-world.js` to define `WORLD_DATA`.
+
+## Autonomous-driver simulation (`sim/`)
+
+The new simulation is a clean, layered extension aimed at realistic driving:
+directed lanes, sidewalks, crosswalks, coordinated signal phases, pedestrians
+who yield/wait/jaywalk, traffic obeying the same rules, horn warnings and a
+full stop at the destination. It also generates a **large procedural city**
+(`?scene=city&blocks=6`, or `?scene=city&huge` for 14×14 blocks) with turning
+routes, per-junction signals, pedestrians, traffic, right-of-way negotiation
+and instanced 3D rendering. The map design follows the freeCodeCamp / Radu
+Mariescu-Istodor *Virtual World* tutorial that this repo's `world/` editor came
+from (procedural buildings and trees, fake-3D rendering, dynamic viewport and
+minimap). The driver is deliberately rule-based first; a learned policy will be
+added later and measured against this baseline.
+
+```bash
+python -m http.server 8000   # then open http://localhost:8000/sim/index.html
+                             # or http://localhost:8000/sim/3d.html (true 3D)
+                             # or /sim/3d.html?scene=city&blocks=6 (large city)
+                             # or /sim/3d.html?scene=city&huge (14×14 city)
+npm run sim                  # headless, 60s simulated
+npm run sim:city             # headless, large city
+npm run sim:events           # with the event log
+```
+
+Architecture, controls, current results and the explicit "not yet implemented"
+list are in `sim/README.md`.
 
 ## Headless training
 
