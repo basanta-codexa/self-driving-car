@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autonomous Driver · Signalised Intersection</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="simCanvas"></canvas>
+    <div id="toolbar">
+        <button id="btnPause">Pause</button>
+        <button id="btnStep">Step</button>
+        <button id="btnReset">Restart</button>
+        <label>Speed <input id="speed" type="range" min="0.25" max="3" step="0.25" value="1"></label>
+        <span id="speedLabel">1x</span>
+    </div>
+    <div id="legend">
+        <span><i class="dot ego"></i> ego</span>
+        <span><i class="dot traffic"></i> traffic</span>
+        <span><i class="dot ped"></i> pedestrian</span>
+        <span><i class="dot jay"></i> jaywalker</span>
+    </div>
+
+    <script src="math.js"></script>
+    <script src="scene.js"></script>
+    <script src="city.js"></script>
+    <script src="lanes.js"></script>
+    <script src="signals.js"></script>
+    <script src="rightofway.js"></script>
+    <script src="agents.js"></script>
+    <script src="driver.js"></script>
+    <script src="scenery.js"></script>
+    <script src="simulation.js"></script>
+    <script src="renderer.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
