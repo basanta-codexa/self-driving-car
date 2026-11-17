@@ -1,0 +1,29 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #9fc7e8; }
+canvas { display: block; }
+
+#hud, #toolbar, #camera-modes, #hint {
+    position: fixed;
+    font: 13px ui-monospace, Consolas, monospace;
+    color: #e9ecef;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+#hud { top: 14px; left: 14px; line-height: 1.6; min-width: 330px; }
+#camera-modes { top: 14px; right: 14px; display: flex; gap: 6px; }
+#toolbar { bottom: 14px; left: 14px; display: flex; align-items: center; gap: 10px; }
+#hint { bottom: 14px; right: 14px; color: #cfd8dc; font-size: 12px; }
+button {
+    font: inherit;
+    color: #e9ecef;
+    background: #343a40;
+    border: 1px solid #495057;
+    border-radius: 5px;
+    padding: 5px 11px;
+    cursor: pointer;
+}
+button:hover { background: #495057; }
+button.active { background: #2f7fd1; border-color: #4dabf7; }
+input { vertical-align: middle; }

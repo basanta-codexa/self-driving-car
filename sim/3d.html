@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autonomous Driver · 3D World</title>
+    <link rel="stylesheet" href="3d.css">
+    <!-- Vendored Three.js: works offline, no CDN, no build step. -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../vendor/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <canvas id="view3d"></canvas>
+
+    <div id="hud"></div>
+
+    <div id="camera-modes">
+        <button class="mode active" data-mode="follow">Follow</button>
+        <button class="mode" data-mode="orbit">Orbit</button>
+        <button class="mode" data-mode="top">Top-down</button>
+    </div>
+
+    <div id="toolbar">
+        <button id="btnPause">Pause</button>
+        <button id="btnReset">Restart</button>
+        <label>Speed <input id="speed" type="range" min="0.25" max="3" step="0.25" value="1"></label>
+        <span id="speedLabel">1x</span>
+    </div>
+
+    <div id="hint">Huge city: ?scene=city&amp;huge &nbsp;·&nbsp; Orbit: drag to rotate, wheel to zoom, right-drag to pan</div>
+
+    <script>
+        // Surface module/WebGL failures on the page instead of a silent blue screen.
+        function show3DError(text) {
+            const h = document.getElementById("hud");
+            h.style.color = "#ff8a8a";
+            h.textContent = text;
+        }
+        window.addEventListener("error", function (e) {
+            show3DError("ERROR: " + e.message + "  (" + e.filename + ":" + e.lineno + ")");
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+            show3DError("LOAD ERROR: " + e.reason);
+        });
+    </script>
+
+    <!-- Same simulation modules as sim/index.html, loaded before the view. -->
+    <script src="math.js"></script>
+    <script src="scene.js"></script>
+    <script src="city.js"></script>
+    <script src="lanes.js"></script>
+    <script src="signals.js"></script>
+    <script src="rightofway.js"></script>
+    <script src="agents.js"></script>
+    <script src="driver.js"></script>
+    <script src="scenery.js"></script>
+    <script src="simulation.js"></script>
+    <script src="learn/features.js"></script>
+    <script src="learn/network.js"></script>
+    <script src="learn/policy.js"></script>
+    <script type="module" src="3d.js"></script>
+</body>
+</html>
