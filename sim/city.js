@@ -199,31 +199,54 @@
             sidewalks.push({ x: cx + half, y: -extent - margin, w: sidewalk, h: 2 * (extent + margin) });
         }
 
-        // Building blocks + trees inside each city block.
+        // Building blocks + street trees. Nothing is allowed to intersect.
         const buildings = [];
         const trees = [];
         const inner = blockSize - 2 * (half + sidewalk) - 30;
+        const boxOverlaps = (x, y, w, h) =>
+            buildings.some(
+                (b) =>
+                    Math.abs(x - b.x) < (w + b.w) / 2 + 8 &&
+                    Math.abs(y - b.y) < (h + b.h) / 2 + 8
+            );
+        const clearOfBuildings = (x, y, r) =>
+            buildings.every(
+                (b) =>
+                    Math.abs(x - b.x) > b.w / 2 + r + 4 ||
+                    Math.abs(y - b.y) > b.h / 2 + r + 4
+            );
+        const clearOfTrees = (x, y, r) =>
+            trees.every((t) => Math.hypot(x - t.x, y - t.y) > r + t.size * 0.6 + 8);
+
         for (let i = 0; i < blocks; i++) {
             for (let j = 0; j < blocks; j++) {
                 const c = {
                     x: (J(i, j).x + J(i + 1, j + 1).x) / 2,
                     y: (J(i, j).y + J(i + 1, j + 1).y) / 2,
                 };
-                const count = rand() < 0.35 ? 2 : 1;
+                const count = rand() < 0.5 ? 2 : 1;
                 for (let k = 0; k < count; k++) {
                     const w = 70 + rand() * 60;
                     const h = 70 + rand() * 60;
-                    const x = c.x + (rand() - 0.5) * (inner - w);
-                    const y = c.y + (rand() - 0.5) * (inner - h);
-                    buildings.push({ x, y, w, h, height: 26 + rand() * 60, shade: Math.floor(rand() * 3) });
+                    for (let attempt = 0; attempt < 8; attempt++) {
+                        const x = c.x + (rand() - 0.5) * (inner - w);
+                        const y = c.y + (rand() - 0.5) * (inner - h);
+                        if (boxOverlaps(x, y, w, h)) continue;
+                        buildings.push({ x, y, w, h, height: 26 + rand() * 60, shade: Math.floor(rand() * 3) });
+                        break;
+                    }
                 }
-                if (rand() < 0.7) {
-                    trees.push({
-                        x: c.x + (rand() - 0.5) * inner,
-                        y: c.y + (rand() - 0.5) * inner,
-                        size: 26 + rand() * 16,
-                        tone: rand(),
-                    });
+
+                // Trees sit near the pavement edge, not in the middle of a lot.
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const size = 20 + rand() * 12;
+                    const edge = inner / 2 - size / 2 - 6;
+                    const along = (rand() - 0.5) * (inner - size);
+                    const sign = rand() < 0.5 ? -1 : 1;
+                    const x = c.x + (rand() < 0.5 ? sign * edge : along);
+                    const y = c.y + (rand() < 0.5 ? along : sign * edge);
+                    if (!clearOfBuildings(x, y, size / 2) || !clearOfTrees(x, y, size / 2)) continue;
+                    trees.push({ x, y, size, tone: rand() });
                 }
             }
         }

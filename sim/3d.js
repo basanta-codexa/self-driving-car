@@ -141,6 +141,9 @@ const MAT = {
     pedWalk: new THREE.MeshStandardMaterial({ color: 0xffd43b, roughness: 0.9 }),
     pedJay: new THREE.MeshStandardMaterial({ color: 0xff922b, roughness: 0.9 }),
     skin: new THREE.MeshStandardMaterial({ color: 0xe0ac83, roughness: 1 }),
+    hair: new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 1 }),
+    pants: new THREE.MeshStandardMaterial({ color: 0x343a40, roughness: 1 }),
+    shoe: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 1 }),
 };
 
 function box(w, h, d, material, x, y, z, parent = scene) {
@@ -445,20 +448,60 @@ function makeCar(colorMat) {
 const egoMesh = makeCar(MAT.ego);
 const trafficMeshes = sim.traffic.map(() => makeCar(MAT.traffic));
 
-function makePed(material) {
+const SHIRTS = [0x4c6ef5, 0xf76707, 0x2b8a3e, 0xae3ec9, 0xd9486d, 0x1098ad, 0xf59f0b];
+function pedColor(id) {
+    let h = 0;
+    for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return SHIRTS[Math.abs(h) % SHIRTS.length];
+}
+
+function makePed(p, index) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.2, 12, 8), material);
-    body.position.y = 6;
-    body.castShadow = true;
-    g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(2.8, 10, 8), MAT.skin);
-    head.position.y = 14;
+    const shirt = new THREE.MeshStandardMaterial({ color: pedColor(p.id), roughness: 0.9 });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(6, 6.5, 3.6), shirt);
+    torso.position.y = 10;
+    torso.castShadow = true;
+    g.add(torso);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), MAT.skin);
+    head.position.y = 15.4;
     head.castShadow = true;
     g.add(head);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(2.25, 12, 8), MAT.hair);
+    hair.scale.y = 0.55;
+    hair.position.y = 16.4;
+    g.add(hair);
+
+    const legs = [];
+    const arms = [];
+    for (const side of [-1, 1]) {
+        const legGeo = new THREE.BoxGeometry(1.9, 6, 1.9);
+        legGeo.translate(0, -3, 0); // pivot at the hip
+        const leg = new THREE.Mesh(legGeo, MAT.pants);
+        leg.position.set(side * 1.6, 6.8, 0);
+        leg.castShadow = true;
+        g.add(leg);
+        legs.push(leg);
+
+        const shoe = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 3.2), MAT.shoe);
+        shoe.position.set(side * 1.6, 0.6, 0.6);
+        g.add(shoe);
+
+        const armGeo = new THREE.BoxGeometry(1.5, 5.5, 1.5);
+        armGeo.translate(0, -2.75, 0); // pivot at the shoulder
+        const arm = new THREE.Mesh(armGeo, shirt);
+        arm.position.set(side * 3.7, 12.8, 0);
+        arm.castShadow = true;
+        g.add(arm);
+        arms.push(arm);
+    }
+
+    g.userData = { shirtParts: [torso, ...arms], legs, arms, phase: index * 1.7 };
     scene.add(g);
     return g;
 }
-const pedMeshes = sim.peds.map((p) => makePed(p.jaywalk ? MAT.pedJay : MAT.pedWait));
+const pedMeshes = sim.peds.map((p, i) => makePed(p, i));
 
 // Horn pulse ring.
 const hornRing = new THREE.Mesh(
@@ -486,8 +529,19 @@ function syncAgents() {
         const p = sim.peds[i];
         if (!p) return;
         mesh.position.copy(v2(p.pos, 0));
+        const u = mesh.userData;
         const mat = p.jaywalk ? MAT.pedJay : p.state === "crossing" ? MAT.pedWalk : MAT.pedWait;
-        mesh.children[0].material = mat;
+        for (const part of u.shirtParts) part.material = mat;
+
+        const moving = p.state === "crossing";
+        const swing = moving ? Math.sin(sim.timeMs * 0.012 + u.phase) * 0.55 : 0;
+        u.legs[0].rotation.x = swing;
+        u.legs[1].rotation.x = -swing;
+        u.arms[0].rotation.x = -swing * 0.8;
+        u.arms[1].rotation.x = swing * 0.8;
+        if (moving && (p.vel.x || p.vel.y)) {
+            mesh.rotation.y = Math.atan2(-p.vel.x, -p.vel.y);
+        }
     });
 
     const states = sim.signals.statesAt(sim.timeMs);
@@ -621,5 +675,7 @@ function animate(now) {
     requestAnimationFrame(animate);
 }
 requestAnimationFrame(animate);
+
+if (params.get("view") === "top") setMode("top");
 
 window.view3dDebug = { sim, scene, camera, setMode };

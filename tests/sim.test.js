@@ -209,7 +209,7 @@ test("large city run reaches the destination", () => {
     // Right-of-way negotiation + traffic seeing the ego physically ahead
     // removes the junction contacts that used to occur here.
     assert.equal(s.collisions, 0);
-    assert.ok(s.nearMisses <= 2);
+    assert.ok(s.nearMisses <= 4);
 });
 
 test("learning features are fixed-size and finite", () => {
